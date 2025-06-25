@@ -1,0 +1,118 @@
+import React from 'react';
+import { DateTime } from 'luxon';
+import { motion } from 'framer-motion';
+
+const ReportTable = ({ reports, onEdit, totalWeeklyLeaveDays }) => {
+  // حساب الإجماليات
+  const totals = reports.reduce(
+    (acc, report) => {
+      acc.totalWorkHours += report.workHours || 0;
+      // أيام العمل تشمل الأيام غير الغيابية (حضور أو إجازة أسبوعية)
+      acc.totalWorkDays += report.absence === 'نعم' ? 0 : 1;
+      acc.totalAbsenceDays += report.absence === 'نعم' ? 1 : 0;
+      acc.totalDeductions += (report.lateDeduction || 0) + (report.earlyLeaveDeduction || 0);
+      acc.totalOvertime += report.overtime || 0;
+      return acc;
+    },
+    {
+      totalWorkHours: 0,
+      totalWorkDays: 0,
+      totalAbsenceDays: 0,
+      totalDeductions: 0,
+      totalOvertime: 0,
+    }
+  );
+
+  return (
+    <div className="bg-white p-6 rounded-xl shadow-md border border-gray-100">
+      <h2 className="text-xl font-semibold text-gray-700 mb-4 text-right">التقارير</h2>
+      <div className="overflow-x-auto">
+        <table className="min-w-full bg-white">
+          <thead>
+            <tr className="bg-gray-50">
+              <th className="px-4 py-3 text-right text-sm font-semibold text-gray-800 border-b">كود الموظف</th>
+              <th className="px-4 py-3 text-right text-sm font-semibold text-gray-800 border-b">الاسم</th>
+              <th className="px-4 py-3 text-right text-sm font-semibold text-gray-800 border-b">التاريخ</th>
+              <th className="px-4 py-3 text-right text-sm font-semibold text-gray-800 border-b">الحضور</th>
+              <th className="px-4 py-3 text-right text-sm font-semibold text-gray-800 border-b">الانصراف</th>
+              <th className="px-4 py-3 text-right text-sm font-semibold text-gray-800 border-b">ساعات العمل</th>
+              <th className="px-4 py-3 text-right text-sm font-semibold text-gray-800 border-b">الساعات الإضافية</th>
+              <th className="px-4 py-3 text-right text-sm font-semibold text-gray-800 border-b">دقائق التأخير</th>
+              <th className="px-4 py-3 text-right text-sm font-semibold text-gray-800 border-b">خصم التأخير</th>
+              <th className="px-4 py-3 text-right text-sm font-semibold text-gray-800 border-b">خصم الانصراف المبكر</th>
+              <th className="px-4 py-3 text-right text-sm font-semibold text-gray-800 border-b">الغياب</th>
+              <th className="px-4 py-3 text-right text-sm font-semibold text-gray-800 border-b">أيام العمل الأسبوعية</th>
+              <th className="px-4 py-3 text-right text-sm font-semibold text-gray-800 border-b">أيام الإجازة الأسبوعية</th>
+              <th className="px-4 py-3 text-right text-sm font-semibold text-gray-800 border-b">رصيد السماح بالتأخير (دقائق)</th>
+              <th className="px-4 py-3 text-right text-sm font-semibold text-gray-800 border-b">إجراءات</th>
+            </tr>
+          </thead>
+          <tbody>
+            {reports.map((report, index) => {
+              const reportDate = report.date ? DateTime.fromISO(report.date, { zone: 'Africa/Cairo' }) : null;
+              const checkInTime = report.checkIn
+                ? DateTime.fromFormat(report.checkIn, 'hh:mm:ss a', { zone: 'Africa/Cairo' })
+                : null;
+              const checkOutTime = report.checkOut
+                ? DateTime.fromFormat(report.checkOut, 'hh:mm:ss a', { zone: 'Africa/Cairo' })
+                : null;
+
+              return (
+                <motion.tr
+                  key={report._id || index}
+                  whileHover={{ backgroundColor: '#f1fafb' }}
+                  transition={{ duration: 0.2 }}
+                  className={`border-b ${
+                    report.absence === 'نعم' ? 'bg-red-50' : report.isSingleFingerprint === 'نعم' ? 'bg-yellow-50' : ''
+                  }`}
+                >
+                  <td className="px-4 py-2 text-right text-sm">{report.code}</td>
+                  <td className="px-4 py-2 text-right text-sm">{report.employeeName || 'غير معروف'}</td>
+                  <td className="px-4 py-2 text-right text-sm">
+                    {reportDate && reportDate.isValid ? reportDate.toFormat('yyyy-MM-dd') : '-'}
+                  </td>
+                  <td className="px-4 py-2 text-right text-sm">
+                    {checkInTime && checkInTime.isValid ? checkInTime.toFormat('hh:mm:ss a') : '-'}
+                  </td>
+                  <td className="px-4 py-2 text-right text-sm">
+                    {checkOutTime && checkOutTime.isValid ? checkOutTime.toFormat('hh:mm:ss a') : '-'}
+                  </td>
+                  <td className="px-4 py-2 text-right text-sm">{(report.workHours || 0).toFixed(2)}</td>
+                  <td className="px-4 py-2 text-right text-sm">{(report.overtime || 0).toFixed(2)}</td>
+                  <td className="px-4 py-2 text-right text-sm">{(report.lateMinutes || 0).toFixed(0)}</td>
+                  <td className="px-4 py-2 text-right text-sm">{(report.lateDeduction || 0).toFixed(2)}</td>
+                  <td className="px-4 py-2 text-right text-sm">{(report.earlyLeaveDeduction || 0).toFixed(2)}</td>
+                  <td className="px-4 py-2 text-right text-sm">{report.absence}</td>
+                  <td className="px-4 py-2 text-right text-sm">{report.workDaysPerWeek || '-'}</td>
+                  <td className="px-4 py-2 text-right text-sm">{report.weeklyLeaveDays || '-'}</td>
+                  <td className="px-4 py-2 text-right text-sm">{report.monthlyLateAllowance !== undefined ? report.monthlyLateAllowance : '-'}</td>
+                  <td className="px-4 py-2 text-right">
+                    <motion.button
+                      onClick={() => onEdit(report)}
+                      whileHover={{ scale: 1.05, boxShadow: '0 4px 12px rgba(0,0,0,0.1)' }}
+                      whileTap={{ scale: 0.95 }}
+                      className="bg-blue-600 text-white px-4 py-1 rounded-md hover:bg-blue-700 transition-colors duration-300"
+                    >
+                      تعديل
+                    </motion.button>
+                  </td>
+                </motion.tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+      <div className="mt-4 text-right">
+        <h3 className="text-lg font-semibold text-gray-700 mb-2">إجماليات الفترة</h3>
+        <p>إجمالي ساعات العمل: {totals.totalWorkHours.toFixed(2)} ساعة</p>
+        <p>إجمالي أيام العمل: {totals.totalWorkDays} يوم</p>
+        <p>إجمالي أيام الغياب: {totals.totalAbsenceDays} يوم</p>
+        <p>إجمالي الخصومات: {totals.totalDeductions.toFixed(2)} يوم</p>
+        <p>إجمالي الساعات الإضافية: {totals.totalOvertime.toFixed(2)} ساعة</p>
+        <p>إجمالي أيام الإجازة الأسبوعية: {totalWeeklyLeaveDays || 0} يوم</p>
+      </div>
+    </div>
+  );
+};
+
+export default ReportTable;

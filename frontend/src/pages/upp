@@ -1,0 +1,195 @@
+import React, { useState, useContext } from 'react';
+import { useNavigate } from 'react-router-dom';
+import { AuthContext } from '../components/AuthProvider';
+import NavBar from '../components/NavBar';
+import ReportTable from '../components/ReportTable';
+import { motion } from 'framer-motion';
+import axios from 'axios';
+
+const UploadFingerprint = () => {
+  const { user } = useContext(AuthContext);
+  const navigate = useNavigate();
+  const [file, setFile] = useState(null);
+  const [searchCode, setSearchCode] = useState('');
+  const [dateFrom, setDateFrom] = useState('');
+  const [dateTo, setDateTo] = useState('');
+  const [reports, setReports] = useState([]);
+  const [editingReport, setEditingReport] = useState(null);
+
+  if (!user || user.role !== 'admin') {
+    navigate('/login');
+    return null;
+  }
+
+  const handleFileChange = (e) => {
+    setFile(e.target.files[0]);
+  };
+
+  const handleUpload = async (e) => {
+    e.preventDefault();
+    if (!file) {
+      alert('يرجى اختيار ملف أولاً');
+      return;
+    }
+    const formData = new FormData();
+    formData.append('file', file);
+    try {
+      const response = await axios.post(
+        `${process.env.REACT_APP_API_URL}/api/fingerprints/upload`,
+        formData,
+        {
+          headers: {
+            Authorization: `Bearer ${localStorage.getItem('token')}`,
+            // لا تحدد Content-Type، اترك axios يتعامل مع هذا تلقائيًا
+          },
+        }
+      );
+      setReports(response.data.reports);
+      alert('تم رفع الملف');
+    } catch (error) {
+      alert('خطأ أثناء رفع الملف');
+      console.error(error);
+    }
+  };
+
+  const handleSearch = async () => {
+    try {
+      const response = await axios.get(`${process.env.REACT_APP_API_URL}/api/fingerprints`, {
+        params: { code: searchCode, dateFrom, dateTo },
+        headers: { Authorization: `Bearer ${localStorage.getItem('token')}` },
+      });
+      setReports(response.data.reports);
+    } catch (error) {
+      alert('خطأ أثناء البحث');
+    }
+  };
+
+  const handleEdit = (report) => {
+    setEditingReport(report);
+  };
+
+  const handleSaveEdit = async () => {
+    try {
+      await axios.put(
+        `${process.env.REACT_APP_API_URL}/api/fingerprints/${editingReport._id}`,
+        editingReport,
+        {
+          headers: { Authorization: `Bearer ${localStorage.getItem('token')}` },
+        }
+      );
+      setReports(reports.map((r) => (r._id === editingReport._id ? editingReport : r)));
+      setEditingReport(null);
+      alert('تم حفظ التعديلات');
+    } catch (error) {
+      alert('خطأ أثناء حفظ التعديلات');
+    }
+  };
+
+  return (
+    <div className="min-h-screen">
+      <NavBar />
+      <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="p-6">
+        <h1 className="text-2xl font-bold mb-6">رفع بصمة وعرض التقرير</h1>
+        <div className="card p-6">
+          <h3 className="text-lg font-semibold mb-4">رفع ملف البصمة</h3>
+          <form onSubmit={handleUpload}>
+            <input
+              type="file"
+              accept=".xlsx,.csv"
+              onChange={handleFileChange}
+              className="mb-4"
+            />
+            <button type="submit" className="btn-primary">
+              رفع الملف
+            </button>
+          </form>
+
+          <div className="mt-6">
+            <h3 className="text-lg font-semibold mb-4">بحث في التقارير</h3>
+            <div className="flex gap-4 mb-4">
+              <input
+                type="text"
+                placeholder="الكود"
+                value={searchCode}
+                onChange={(e) => setSearchCode(e.target.value)}
+                className="p-2 border rounded"
+              />
+              <input
+                type="date"
+                value={dateFrom}
+                onChange={(e) => setDateFrom(e.target.value)}
+                className="p-2 border rounded"
+              />
+              <input
+                type="date"
+                value={dateTo}
+                onChange={(e) => setDateTo(e.target.value)}
+                className="p-2 border rounded"
+              />
+              <button onClick={handleSearch} className="btn-primary">
+                بحث
+              </button>
+              <button onClick={() => {
+                setSearchCode('');
+                setDateFrom('');
+                setDateTo('');
+                handleSearch();
+              }} className="btn-secondary">
+                عرض الكل
+              </button>
+            </div>
+          </div>
+
+          <ReportTable reports={reports} onEdit={handleEdit} />
+
+          {editingReport && (
+            <div className="mt-4 p-4 bg-gray-100 rounded-lg">
+              <h3 className="font-semibold mb-2">تعديل التقرير</h3>
+              <div className="grid grid-cols-1 gap-4">
+                <div>
+                  <label className="block text-gray-700">تاريخ الحضور</label>
+                  <input
+                    type="datetime-local"
+                    value={editingReport.checkIn}
+                    onChange={(e) =>
+                      setEditingReport({ ...editingReport, checkIn: e.target.value })
+                    }
+                    className="w-full p-2 border rounded"
+                  />
+                </div>
+                <div>
+                  <label className="block text-gray-700">تاريخ الانصراف</label>
+                  <input
+                    type="datetime-local"
+                    value={editingReport.checkOut}
+                    onChange={(e) =>
+                      setEditingReport({ ...editingReport, checkOut: e.target.value })
+                    }
+                    className="w-full p-2 border rounded"
+                  />
+                </div>
+                <div>
+                  <label className="block text-gray-700">ساعات إضافية</label>
+                  <input
+                    type="number"
+                    value={editingReport.overtime}
+                    onChange={(e) =>
+                      setEditingReport({ ...editingReport, overtime: e.target.value })
+                    }
+                    className="w-full p-2 border rounded"
+                  />
+                </div>
+                <button onClick={handleSaveEdit} className="btn-primary">
+                  حفظ التعديلات
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
+      </motion.div>
+    </div>
+  );
+};
+
+export default UploadFingerprint;
+

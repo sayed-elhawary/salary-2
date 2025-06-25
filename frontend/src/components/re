@@ -1,0 +1,68 @@
+import React from 'react';
+
+const ReportTable = ({ reports, onEdit }) => {
+  const formatDateTime = (dateStr) => {
+    if (!dateStr) return '-';
+    const date = new Date(dateStr);
+    return date.toLocaleString('en-GB', {
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+      hour12: true,
+    });
+  };
+
+  return (
+    <table className="table w-full text-sm text-right text-gray-700 border">
+      <thead className="bg-gray-200">
+        <tr>
+          <th className="px-4 py-2 border">الكود</th>
+          <th className="px-4 py-2 border">تاريخ الحضور</th>
+          <th className="px-4 py-2 border">تاريخ الانصراف</th>
+          <th className="px-4 py-2 border">ساعات العمل</th>
+          <th className="px-4 py-2 border">ساعات إضافية</th>
+          <th className="px-4 py-2 border">دقائق التأخير</th>
+          <th className="px-4 py-2 border">خصم التأخير (أيام)</th>
+          <th className="px-4 py-2 border">خصم الانصراف المبكر (أيام)</th>
+          <th className="px-4 py-2 border">إجراء</th>
+        </tr>
+      </thead>
+      <tbody>
+        {reports.length === 0 ? (
+          <tr>
+            <td colSpan="9" className="text-center py-4 text-gray-500 border">
+              لا توجد بيانات لعرضها
+            </td>
+          </tr>
+        ) : (
+          reports.map((report) => (
+            <tr key={report._id} className="border-b hover:bg-gray-100">
+              <td className="px-4 py-2 border">{report.code}</td>
+              <td className="px-4 py-2 border">{formatDateTime(report.checkIn)}</td>
+              <td className="px-4 py-2 border">{formatDateTime(report.checkOut)}</td>
+              <td className="px-4 py-2 border">{report.workHours || 0}</td>
+              <td className="px-4 py-2 border">{report.overtime || 0}</td>
+              <td className="px-4 py-2 border">{report.lateMinutes || 0}</td>
+              <td className="px-4 py-2 border">{report.lateDeduction || 0}</td>
+              <td className="px-4 py-2 border">{report.earlyLeaveDeduction || 0}</td>
+              <td className="px-4 py-2 border">
+                <button
+                  onClick={() => onEdit(report)}
+                  className="text-blue-600 hover:text-blue-800 font-semibold"
+                >
+                  تعديل
+                </button>
+              </td>
+            </tr>
+          ))
+        )}
+      </tbody>
+    </table>
+  );
+};
+
+export default ReportTable;
+
