@@ -70,6 +70,12 @@ const fingerprintSchema = new mongoose.Schema({
 
 fingerprintSchema.index({ code: 1, date: 1 }, { unique: true });
 
+const isWeeklyLeaveDay = (date, workDaysPerWeek) => {
+  const dayOfWeek = DateTime.fromJSDate(date, { zone: 'Africa/Cairo' }).weekday;
+  return (workDaysPerWeek === 5 && (dayOfWeek === 5 || dayOfWeek === 6)) ||
+         (workDaysPerWeek === 6 && dayOfWeek === 5);
+};
+
 fingerprintSchema.methods.calculateAttendance = async function () {
   if (this.medicalLeave) {
     this.workHours = 0;
@@ -84,32 +90,60 @@ fingerprintSchema.methods.calculateAttendance = async function () {
     return;
   }
 
-  if (this.checkIn && this.checkOut) {
-    const checkIn = DateTime.fromJSDate(this.checkIn, { zone: 'Africa/Cairo' });
-    const checkOut = DateTime.fromJSDate(this.checkOut, { zone: 'Africa/Cairo' });
-    if (!checkIn.isValid || !checkOut.isValid) {
-      this.workHours = 0;
+  if (this.annualLeave) {
+    this.workHours = 0;
+    this.overtime = 0;
+    this.lateMinutes = 0;
+    this.lateDeduction = 0;
+    this.earlyLeaveDeduction = 0;
+    this.absence = false;
+    this.isSingleFingerprint = false;
+    this.medicalLeaveDeduction = 0;
+    return;
+  }
+
+  if (isWeeklyLeaveDay(this.date, this.workDaysPerWeek)) {
+    this.workHours = 0;
+    this.overtime = 0;
+    this.lateMinutes = 0;
+    this.lateDeduction = 0;
+    this.earlyLeaveDeduction = 0;
+    this.absence = false;
+    this.isSingleFingerprint = false;
+    this.medicalLeaveDeduction = 0;
+    return;
+  }
+
+  if (this.checkIn || this.checkOut) {
+    this.isSingleFingerprint = !(this.checkIn && this.checkOut);
+    if (this.checkIn && this.checkOut) {
+      const checkIn = DateTime.fromJSDate(this.checkIn, { zone: 'Africa/Cairo' });
+      const checkOut = DateTime.fromJSDate(this.checkOut, { zone: 'Africa/Cairo' });
+      if (!checkIn.isValid || !checkOut.isValid) {
+        this.workHours = 0;
+        this.overtime = 0;
+        this.medicalLeaveDeduction = 0;
+        this.absence = false;
+        return;
+      }
+
+      const diffMs = checkOut.toMillis() - checkIn.toMillis();
+      const hours = diffMs / (1000 * 60 * 60);
+      this.workHours = Math.max(Math.min(hours, 8), 0);
+      this.overtime = hours > 8 ? hours - 8 : 0;
+      this.medicalLeaveDeduction = 0;
+    } else {
+      this.workHours = 0; // البصمة الفردية لا تُحسب ساعات عمل حتى إضافة البصمة الثانية
       this.overtime = 0;
       this.medicalLeaveDeduction = 0;
-      return;
-    }
-
-    const diffMs = checkOut.toMillis() - checkIn.toMillis();
-    const hours = diffMs / (1000 * 60 * 60);
-    this.workHours = Math.max(Math.min(hours, 8), 0);
-    this.overtime = hours > 8 ? hours - 8 : 0;
-    this.medicalLeaveDeduction = 0;
-
-    if (hours < 8) {
-      this.isSingleFingerprint = false;
-    } else {
-      this.isSingleFingerprint = !this.checkIn || !this.checkOut;
+      this.absence = false;
     }
   } else {
     this.workHours = 0;
     this.overtime = 0;
     this.medicalLeaveDeduction = 0;
-    this.isSingleFingerprint = this.checkIn || this.checkOut ? true : false;
+    this.isSingleFingerprint = false;
+    this.absence = true;
   }
 };
 
