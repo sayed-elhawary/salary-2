@@ -94,6 +94,7 @@ async function handleLateDeduction(report) {
             console.log(`Late deduction for ${report.code} on ${DateTime.fromJSDate(report.date).toISODate()}: 0.25 (late limit exceeded)`);
           }
         } else {
+          report.lateMinutes = 0;
           report.lateDeduction = 0;
         }
       } else {
@@ -181,7 +182,6 @@ router.post('/upload', authMiddleware, upload.single('file'), async (req, res) =
           existingReport.checkIn = report.checkIn || existingReport.checkIn;
           existingReport.checkOut = report.checkOut || existingReport.checkOut;
           existingReport.workDaysPerWeek = user ? user.workDaysPerWeek : 5;
-          existingReport.absence = report.checkIn || report.checkOut ? false : existingReport.absence;
           existingReport.annualLeave = false;
           existingReport.medicalLeave = false;
           existingReport.medicalLeaveDeduction = 0;
@@ -196,6 +196,7 @@ router.post('/upload', authMiddleware, upload.single('file'), async (req, res) =
             workDaysPerWeek: existingReport.workDaysPerWeek,
             monthlyLateAllowance: user?.monthlyLateAllowance || 120,
             totalAnnualLeave: user?.totalAnnualLeave || 0,
+            annualLeaveBalance: user?.annualLeaveBalance || 21,
             weeklyLeaveDays: isWeeklyLeaveDay(existingReport.date, existingReport.workDaysPerWeek) ? 1 : 0,
             medicalLeave: existingReport.medicalLeave ? 'نعم' : 'لا',
             medicalLeaveDeduction: existingReport.medicalLeaveDeduction,
@@ -205,7 +206,6 @@ router.post('/upload', authMiddleware, upload.single('file'), async (req, res) =
             ...report,
             workDaysPerWeek: user ? user.workDaysPerWeek : 5,
             annualLeave: false,
-            absence: report.checkIn || report.checkOut ? false : true,
             medicalLeave: false,
             medicalLeaveDeduction: 0,
           });
@@ -220,6 +220,7 @@ router.post('/upload', authMiddleware, upload.single('file'), async (req, res) =
             workDaysPerWeek: fingerprint.workDaysPerWeek,
             monthlyLateAllowance: user?.monthlyLateAllowance || 120,
             totalAnnualLeave: user?.totalAnnualLeave || 0,
+            annualLeaveBalance: user?.annualLeaveBalance || 21,
             weeklyLeaveDays: isWeeklyLeaveDay(fingerprint.date, fingerprint.workDaysPerWeek) ? 1 : 0,
             medicalLeave: fingerprint.medicalLeave ? 'نعم' : 'لا',
             medicalLeaveDeduction: fingerprint.medicalLeaveDeduction,
@@ -278,7 +279,8 @@ router.get('/', authMiddleware, async (req, res) => {
             r => r.code === user.code && DateTime.fromJSDate(r.date).toISODate() === dateStr
           );
           if (!existingReport) {
-            if (isWeeklyLeaveDay(currentDate.toJSDate(), user.workDaysPerWeek)) {
+            const workDaysPerWeek = user.workDaysPerWeek || 5;
+            if (isWeeklyLeaveDay(currentDate.toJSDate(), workDaysPerWeek)) {
               const weeklyLeaveReport = {
                 code: user.code,
                 date: currentDate.toJSDate(),
@@ -294,7 +296,7 @@ router.get('/', authMiddleware, async (req, res) => {
                 medicalLeave: false,
                 medicalLeaveDeduction: 0,
                 isSingleFingerprint: false,
-                workDaysPerWeek: user.workDaysPerWeek,
+                workDaysPerWeek,
               };
               const existingWeeklyReport = await Fingerprint.findOne({
                 code: user.code,
@@ -305,6 +307,7 @@ router.get('/', authMiddleware, async (req, res) => {
               });
               if (!existingWeeklyReport) {
                 const fingerprint = new Fingerprint(weeklyLeaveReport);
+                await fingerprint.calculateAttendance();
                 await fingerprint.save();
                 missingReports.push(fingerprint);
               }
@@ -324,7 +327,7 @@ router.get('/', authMiddleware, async (req, res) => {
                 medicalLeave: false,
                 medicalLeaveDeduction: 0,
                 isSingleFingerprint: false,
-                workDaysPerWeek: user.workDaysPerWeek,
+                workDaysPerWeek,
               };
               const existingAbsenceReport = await Fingerprint.findOne({
                 code: user.code,
@@ -335,10 +338,17 @@ router.get('/', authMiddleware, async (req, res) => {
               });
               if (!existingAbsenceReport) {
                 const fingerprint = new Fingerprint(absenceReport);
+                await fingerprint.calculateAttendance();
                 await fingerprint.save();
                 missingReports.push(fingerprint);
               }
             }
+          } else {
+            // تحديث السجل إذا كان يحتوي على بصمة فردية أو لا يحتوي على بصمات
+            await existingReport.calculateAttendance();
+            await handleLateDeduction(existingReport);
+            await handleEarlyLeaveDeduction(existingReport);
+            await existingReport.save();
           }
           currentDate = currentDate.plus({ days: 1 });
         }
@@ -380,6 +390,7 @@ router.get('/', authMiddleware, async (req, res) => {
               });
               if (!existingWeeklyReport) {
                 const fingerprint = new Fingerprint(weeklyLeaveReport);
+                await fingerprint.calculateAttendance();
                 await fingerprint.save();
                 missingReports.push(fingerprint);
               }
@@ -410,10 +421,16 @@ router.get('/', authMiddleware, async (req, res) => {
               });
               if (!existingAbsenceReport) {
                 const fingerprint = new Fingerprint(absenceReport);
+                await fingerprint.calculateAttendance();
                 await fingerprint.save();
                 missingReports.push(fingerprint);
               }
             }
+          } else {
+            await existingReport.calculateAttendance();
+            await handleLateDeduction(existingReport);
+            await handleEarlyLeaveDeduction(existingReport);
+            await existingReport.save();
           }
           currentDate = currentDate.plus({ days: 1 });
         }
@@ -449,6 +466,7 @@ router.get('/', authMiddleware, async (req, res) => {
           annualLeaveDays,
           medicalLeaveDays,
           totalAnnualLeave: user ? user.totalAnnualLeave : 0,
+          annualLeaveBalance: user ? user.annualLeaveBalance : 21,
           monthlyLateAllowance: user ? user.monthlyLateAllowance : 120,
           absence: report.absence ? 'نعم' : 'لا',
           annualLeave: report.annualLeave ? 'نعم' : 'لا',
@@ -504,7 +522,6 @@ router.get('/salary-report', authMiddleware, async (req, res) => {
       const fingerprints = await Fingerprint.find(query).sort({ date: 1 });
       console.log(`Found ${fingerprints.length} fingerprints for user ${user.code}`);
 
-      // إنشاء سجلات الغياب أو الإجازات الأسبوعية إذا لزم الأمر
       const missingReports = [];
       let currentDate = startDate;
       while (currentDate <= endDate) {
@@ -540,6 +557,7 @@ router.get('/salary-report', authMiddleware, async (req, res) => {
             });
             if (!existingWeeklyReport) {
               const fingerprint = new Fingerprint(weeklyLeaveReport);
+              await fingerprint.calculateAttendance();
               await fingerprint.save();
               missingReports.push(fingerprint);
             }
@@ -570,10 +588,16 @@ router.get('/salary-report', authMiddleware, async (req, res) => {
             });
             if (!existingAbsenceReport) {
               const fingerprint = new Fingerprint(absenceReport);
+              await fingerprint.calculateAttendance();
               await fingerprint.save();
               missingReports.push(fingerprint);
             }
           }
+        } else {
+          await existingReport.calculateAttendance();
+          await handleLateDeduction(existingReport);
+          await handleEarlyLeaveDeduction(existingReport);
+          await existingReport.save();
         }
         currentDate = currentDate.plus({ days: 1 });
       }
@@ -589,6 +613,7 @@ router.get('/salary-report', authMiddleware, async (req, res) => {
           acc.totalAbsenceDays += report.absence ? 1 : 0;
           acc.lateDeductionDays += report.lateDeduction || 0;
           acc.earlyLeaveDeductionDays += report.earlyLeaveDeduction || 0;
+          acc.medicalLeaveDeductionDays += report.medicalLeaveDeduction || 0;
           acc.totalOvertime += report.overtime || 0;
           acc.totalWeeklyLeaveDays += isWeeklyLeaveDay(report.date, user.workDaysPerWeek) ? 1 : 0;
           acc.totalAnnualLeaveDays += report.annualLeave ? 1 : 0;
@@ -604,6 +629,7 @@ router.get('/salary-report', authMiddleware, async (req, res) => {
           totalAbsenceDays: 0,
           lateDeductionDays: 0,
           earlyLeaveDeductionDays: 0,
+          medicalLeaveDeductionDays: 0,
           totalOvertime: 0,
           totalWeeklyLeaveDays: 0,
           totalAnnualLeaveDays: 0,
@@ -611,19 +637,18 @@ router.get('/salary-report', authMiddleware, async (req, res) => {
         }
       );
 
-      // تصحيح إجمالي أيام العمل لضمان أن مجموع الأيام = 31
-      const totalDays = totals.totalWorkDays + totals.totalAbsenceDays + totals.totalAnnualLeaveDays + totals.totalMedicalLeaveDays + totals.totalWeeklyLeaveDays;
-      if (totalDays !== 31) {
-        totals.totalWeeklyLeaveDays += 31 - totalDays;
+      const totalDays = endDate.diff(startDate, 'days').days + 1;
+      if (totals.totalWorkDays + totals.totalAbsenceDays + totals.totalAnnualLeaveDays + totals.totalMedicalLeaveDays + totals.totalWeeklyLeaveDays !== totalDays) {
+        totals.totalWeeklyLeaveDays = totalDays - (totals.totalWorkDays + totals.totalAbsenceDays + totals.totalAnnualLeaveDays + totals.totalMedicalLeaveDays);
       }
 
       const dailySalary = user.baseSalary / 30;
-      const hourlyRate = dailySalary / 9; // 9 ساعات عمل يومية
+      const hourlyRate = dailySalary / 9;
       const overtimeValue = (totals.totalOvertime * hourlyRate).toFixed(2);
       const baseMealAllowance = user.mealAllowance;
       const mealAllowance = (baseMealAllowance - (totals.totalAbsenceDays + totals.totalAnnualLeaveDays + totals.totalMedicalLeaveDays) * 50).toFixed(2);
       const bonus = user.baseBonus * (user.bonusPercentage / 100);
-      const deductionsValue = ((totals.totalAbsenceDays + totals.lateDeductionDays + totals.earlyLeaveDeductionDays) * dailySalary + user.penaltiesValue + user.violationsInstallment).toFixed(2);
+      const deductionsValue = ((totals.totalAbsenceDays + totals.lateDeductionDays + totals.earlyLeaveDeductionDays + totals.medicalLeaveDeductionDays) * dailySalary + user.penaltiesValue + user.violationsInstallment).toFixed(2);
 
       const salaryReport = {
         code: user.code,
@@ -640,6 +665,7 @@ router.get('/salary-report', authMiddleware, async (req, res) => {
         totalAbsenceDays: totals.totalAbsenceDays,
         lateDeductionDays: totals.lateDeductionDays.toFixed(2),
         earlyLeaveDeductionDays: totals.earlyLeaveDeductionDays.toFixed(2),
+        medicalLeaveDeductionDays: totals.medicalLeaveDeductionDays.toFixed(2),
         deductionsValue: parseFloat(deductionsValue),
         totalOvertime: totals.totalOvertime.toFixed(2),
         overtimeValue: parseFloat(overtimeValue),
@@ -665,6 +691,7 @@ router.get('/salary-report', authMiddleware, async (req, res) => {
 
       console.log(`Salary report for ${user.code}:`, {
         lateDeductionDays: salaryReport.lateDeductionDays,
+        medicalLeaveDeductionDays: salaryReport.medicalLeaveDeductionDays,
         deductionsValue: salaryReport.deductionsValue,
         netSalary: salaryReport.netSalary,
       });
@@ -909,11 +936,6 @@ router.post('/mission', authMiddleware, async (req, res) => {
       fingerprint.annualLeave = false;
       fingerprint.medicalLeave = false;
       fingerprint.medicalLeaveDeduction = 0;
-      fingerprint.workHours = checkInTime && checkOutTime ? 8 : 0;
-      fingerprint.overtime = 0;
-      fingerprint.lateMinutes = 0;
-      fingerprint.lateDeduction = 0;
-      fingerprint.earlyLeaveDeduction = 0;
     } else {
       fingerprint = new Fingerprint({
         code,
@@ -924,11 +946,6 @@ router.post('/mission', authMiddleware, async (req, res) => {
         annualLeave: false,
         medicalLeave: false,
         medicalLeaveDeduction: 0,
-        workHours: checkInTime && checkOutTime ? 8 : 0,
-        overtime: 0,
-        lateMinutes: 0,
-        lateDeduction: 0,
-        earlyLeaveDeduction: 0,
         isSingleFingerprint: false,
         workDaysPerWeek: (await User.findOne({ code }))?.workDaysPerWeek || 5,
       });
@@ -947,6 +964,7 @@ router.post('/mission', authMiddleware, async (req, res) => {
       workDaysPerWeek,
       monthlyLateAllowance: user ? user.monthlyLateAllowance : 120,
       totalAnnualLeave: user ? user.totalAnnualLeave : 0,
+      annualLeaveBalance: user ? user.annualLeaveBalance : 21,
       weeklyLeaveDays: isWeeklyLeaveDay(fingerprint.date, workDaysPerWeek) ? 1 : 0,
       annualLeaveDays: fingerprint.annualLeave ? 1 : 0,
       medicalLeaveDays: fingerprint.medicalLeave ? 1 : 0,
@@ -1017,7 +1035,7 @@ router.post('/medical-leave', authMiddleware, async (req, res) => {
           fingerprint.absence = false;
           fingerprint.annualLeave = false;
           fingerprint.medicalLeave = true;
-          fingerprint.medicalLeaveDeduction = 0;
+          fingerprint.medicalLeaveDeduction = 0.25;
         } else {
           fingerprint = new Fingerprint({
             code,
@@ -1032,7 +1050,7 @@ router.post('/medical-leave', authMiddleware, async (req, res) => {
             absence: false,
             annualLeave: false,
             medicalLeave: true,
-            medicalLeaveDeduction: 0,
+            medicalLeaveDeduction: 0.25,
             isSingleFingerprint: false,
             workDaysPerWeek,
           });
@@ -1055,6 +1073,7 @@ router.post('/medical-leave', authMiddleware, async (req, res) => {
           workDaysPerWeek,
           monthlyLateAllowance: user ? user.monthlyLateAllowance : 120,
           totalAnnualLeave: user ? user.totalAnnualLeave : 0,
+          annualLeaveBalance: user ? user.annualLeaveBalance : 21,
           weeklyLeaveDays: isWeeklyLeaveDay(report.date, workDaysPerWeek) ? 1 : 0,
           annualLeaveDays: report.annualLeave ? 1 : 0,
           medicalLeaveDays: report.medicalLeave ? 1 : 0,
