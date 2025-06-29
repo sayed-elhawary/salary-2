@@ -62,11 +62,11 @@ router.post('/', authMiddleware, async (req, res) => {
       mealAllowance: mealAllowance || 0,
       medicalInsurance: medicalInsurance || 0,
       socialInsurance: socialInsurance || 0,
-      workDaysPerWeek: workDaysPerWeek || 6,
+      workDaysPerWeek: workDaysPerWeek || 5,
       status: status || 'active',
       createdBy,
       totalAnnualLeave: totalAnnualLeave || 0,
-      role: 'employee',
+      role: 'user', // تعيين الرول صلبًا كـ "user"
     });
 
     await user.save();
@@ -94,11 +94,17 @@ router.put('/:code', authMiddleware, async (req, res) => {
       status,
       createdBy,
       totalAnnualLeave,
+      role, // قد يتم إرساله، لكن سنتجاهله أو نتحقق منه
     } = req.body;
 
     const user = await User.findOne({ code: req.params.code });
     if (!user) {
       return res.status(404).json({ message: 'المستخدم غير موجود' });
+    }
+
+    // منع تحديث الرول إلى "admin"
+    if (role && role !== 'user') {
+      return res.status(403).json({ message: 'لا يمكن تعيين الرول إلى admin من هذه الواجهة' });
     }
 
     // تحديث الحقول المرسلة فقط
@@ -166,4 +172,3 @@ router.post('/login', async (req, res) => {
 });
 
 export default router;
-
