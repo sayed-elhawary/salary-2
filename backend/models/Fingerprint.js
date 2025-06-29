@@ -68,10 +68,8 @@ const fingerprintSchema = new mongoose.Schema({
   timestamps: true,
 });
 
-// إضافة فهرس فريد على code و date
 fingerprintSchema.index({ code: 1, date: 1 }, { unique: true });
 
-// حساب ساعات العمل والساعات الإضافية
 fingerprintSchema.methods.calculateAttendance = async function () {
   if (this.medicalLeave) {
     this.workHours = 0;
