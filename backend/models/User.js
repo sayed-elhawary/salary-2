@@ -2,7 +2,6 @@ import mongoose from 'mongoose';
 import bcrypt from 'bcryptjs';
 import { DateTime } from 'luxon';
 
-// تعريف نموذج المستخدم (User Schema)
 const userSchema = new mongoose.Schema(
   {
     code: {
@@ -137,10 +136,8 @@ const userSchema = new mongoose.Schema(
   }
 );
 
-// إضافة فهرس على الحقل code لتحسين أداء البحث
 userSchema.index({ code: 1 });
 
-// تشفير كلمة المرور قبل الحفظ
 userSchema.pre('save', async function (next) {
   if (this.isModified('password')) {
     try {
@@ -153,7 +150,6 @@ userSchema.pre('save', async function (next) {
   next();
 });
 
-// إعادة تعيين رصيد السماح الشهري إذا تغير الشهر
 userSchema.pre('save', async function (next) {
   const now = DateTime.now().setZone('Africa/Cairo');
   const lastReset = this.lastResetDate
@@ -168,7 +164,6 @@ userSchema.pre('save', async function (next) {
   next();
 });
 
-// دالة للتحقق من كلمة المرور
 userSchema.methods.comparePassword = async function (candidatePassword) {
   return await bcrypt.compare(candidatePassword, this.password);
 };
