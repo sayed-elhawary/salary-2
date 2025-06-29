@@ -11,21 +11,22 @@ const CreateAccount = () => {
   const [form, setForm] = useState({
     code: '',
     fullName: '',
-    email: '',
-    phone: '',
     password: '',
     department: '',
     baseSalary: '',
     baseBonus: '',
     bonusPercentage: '',
+    mealAllowance: '',
     medicalInsurance: 0,
     socialInsurance: 0,
-    workDays: 5,
+    workDaysPerWeek: 5,
     status: 'active',
   });
 
   const netSalary =
-    Number(form.baseSalary || 0) -
+    Number(form.baseSalary || 0) +
+    Number(form.baseBonus || 0) * (Number(form.bonusPercentage || 0) / 100) +
+    Number(form.mealAllowance || 0) -
     Number(form.medicalInsurance || 0) -
     Number(form.socialInsurance || 0);
 
@@ -39,7 +40,7 @@ const CreateAccount = () => {
     try {
       await axios.post(
         `${process.env.REACT_APP_API_URL}/api/users`,
-        { ...form, createdBy: user._id }, // إضافة معرف الأدمن
+        { ...form, createdBy: user._id },
         {
           headers: { Authorization: `Bearer ${localStorage.getItem('token')}` },
         }
@@ -71,6 +72,7 @@ const CreateAccount = () => {
                   onChange={(e) => setForm({ ...form, code: e.target.value })}
                   className="w-full p-2 border rounded"
                   required
+                  maxLength={10}
                 />
               </div>
               <div>
@@ -81,24 +83,6 @@ const CreateAccount = () => {
                   onChange={(e) => setForm({ ...form, fullName: e.target.value })}
                   className="w-full p-2 border rounded"
                   required
-                />
-              </div>
-              <div>
-                <label className="block text-gray-700 font-medium mb-1">البريد الإلكتروني (اختياري)</label>
-                <input
-                  type="email"
-                  value={form.email}
-                  onChange={(e) => setForm({ ...form, email: e.target.value })}
-                  className="w-full p-2 border rounded"
-                />
-              </div>
-              <div>
-                <label className="block text-gray-700 font-medium mb-1">رقم الهاتف (اختياري)</label>
-                <input
-                  type="text"
-                  value={form.phone}
-                  onChange={(e) => setForm({ ...form, phone: e.target.value })}
-                  className="w-full p-2 border rounded"
                 />
               </div>
               <div>
@@ -151,6 +135,15 @@ const CreateAccount = () => {
                 />
               </div>
               <div>
+                <label className="block text-gray-700 font-medium mb-1">بدل وجبة</label>
+                <input
+                  type="number"
+                  value={form.mealAllowance}
+                  onChange={(e) => setForm({ ...form, mealAllowance: e.target.value })}
+                  className="w-full p-2 border rounded"
+                />
+              </div>
+              <div>
                 <label className="block text-gray-700 font-medium mb-1">قيمة التأمين الطبي</label>
                 <input
                   type="number"
@@ -171,8 +164,8 @@ const CreateAccount = () => {
               <div>
                 <label className="block text-gray-700 font-medium mb-1">عدد أيام العمل</label>
                 <select
-                  value={form.workDays}
-                  onChange={(e) => setForm({ ...form, workDays: parseInt(e.target.value) })}
+                  value={form.workDaysPerWeek}
+                  onChange={(e) => setForm({ ...form, workDaysPerWeek: parseInt(e.target.value) })}
                   className="w-full p-2 border rounded"
                 >
                   <option value={5}>5 أيام</option>
@@ -195,7 +188,7 @@ const CreateAccount = () => {
                 <label className="block text-gray-700 font-medium mb-1">الراتب الصافي (يُحسب تلقائياً)</label>
                 <input
                   type="number"
-                  value={netSalary}
+                  value={netSalary.toFixed(2)}
                   readOnly
                   className="w-full p-2 border rounded bg-gray-100 text-gray-700"
                 />

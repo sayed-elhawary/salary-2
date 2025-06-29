@@ -17,10 +17,24 @@ const UploadFingerprint = () => {
   const [dateTo, setDateTo] = useState('');
   const [reports, setReports] = useState([]);
   const [filteredReports, setFilteredReports] = useState([]);
-  const [editingReport, setEditingReport] = useState(null);
   const [isCreatingMission, setIsCreatingMission] = useState(false);
+  const [isCreatingMedicalLeave, setIsCreatingMedicalLeave] = useState(false);
+  const [missionDetails, setMissionDetails] = useState({
+    code: '',
+    date: '',
+    checkIn: '',
+    checkOut: '',
+    missionType: 'مهمة رسمية',
+    description: '',
+  });
+  const [medicalLeaveDetails, setMedicalLeaveDetails] = useState({
+    code: '',
+    dateFrom: '',
+    dateTo: '',
+  });
   const [loading, setLoading] = useState(false);
   const [showSingleFingerprint, setShowSingleFingerprint] = useState(false);
+  const [showAbsenceDays, setShowAbsenceDays] = useState(false);
 
   useEffect(() => {
     if (!user || user.role !== 'admin') {
@@ -29,35 +43,65 @@ const UploadFingerprint = () => {
   }, [user, navigate]);
 
   useEffect(() => {
+    let filtered = reports;
     if (showSingleFingerprint) {
-      const singleFingerprintReports = reports.filter(report => report.isSingleFingerprint);
-      setFilteredReports(singleFingerprintReports);
-    } else {
-      setFilteredReports(reports);
+      filtered = filtered.filter(report => report.isSingleFingerprint === 'نعم');
     }
-  }, [reports, showSingleFingerprint]);
+    if (showAbsenceDays) {
+      filtered = filtered.filter(report => report.absence === 'نعم');
+    }
+    setFilteredReports(filtered);
+    console.log(`Filtered reports: ${filtered.length}, Absence days shown: ${showAbsenceDays}, Single fingerprints shown: ${showSingleFingerprint}`);
+  }, [reports, showSingleFingerprint, showAbsenceDays]);
 
   const calculateTotals = () => {
-    const totalWorkHours = filteredReports.reduce((sum, report) => sum + report.workHours, 0);
-    const totalWorkDays = filteredReports.filter(report => !report.absence).length;
-    const totalDeductions = filteredReports.reduce(
-      (sum, r) => sum + r.lateDeduction + r.earlyLeaveDeduction,
-      0
-    );
-    const totalOvertime = filteredReports.reduce((sum, report) => sum + report.overtime, 0);
-    const totalAbsenceDays = filteredReports.filter(report => report.absence).length;
-    const totalWeeklyLeaveDays = filteredReports.reduce(
-      (sum, report) => sum + (report.weeklyLeaveDays || 0),
-      0
+    const totals = filteredReports.reduce(
+      (acc, report) => {
+        const isWorkDay = report.absence === 'لا' && 
+                         report.weeklyLeaveDays === 0 && 
+                         report.annualLeave === 'لا' && 
+                         report.medicalLeave === 'لا';
+        const isAbsenceDay = report.absence === 'نعم';
+
+        acc.totalWorkHours += report.workHours || 0;
+        acc.totalWorkDays += isWorkDay ? 1 : 0;
+        acc.totalAbsenceDays += isAbsenceDay ? 1 : 0;
+        acc.totalDeductions += (report.lateDeduction || 0) + 
+                              (report.earlyLeaveDeduction || 0) + 
+                              (report.medicalLeaveDeduction || 0);
+        acc.totalOvertime += report.overtime || 0;
+        acc.totalWeeklyLeaveDays += report.weeklyLeaveDays || 0;
+        acc.totalAnnualLeaveDays += report.annualLeave === 'نعم' ? 1 : 0;
+        acc.totalMedicalLeaveDays += report.medicalLeave === 'نعم' ? 1 : 0;
+        acc.annualLeaveBalance = report.annualLeaveBalance || 21;
+
+        return acc;
+      },
+      {
+        totalWorkHours: 0,
+        totalWorkDays: 0,
+        totalAbsenceDays: 0,
+        totalDeductions: 0,
+        totalOvertime: 0,
+        totalWeeklyLeaveDays: 0,
+        totalAnnualLeaveDays: 0,
+        totalMedicalLeaveDays: 0,
+        annualLeaveBalance: 21,
+      }
     );
 
+    console.log(`Calculated totals: Work Hours=${totals.totalWorkHours}, Work Days=${totals.totalWorkDays}, Absence Days=${totals.totalAbsenceDays}, Deductions=${totals.totalDeductions}, Overtime=${totals.totalOvertime}, Weekly Leave=${totals.totalWeeklyLeaveDays}, Annual Leave=${totals.totalAnnualLeaveDays}, Medical Leave=${totals.totalMedicalLeaveDays}`);
+
     return {
-      totalWorkHours: totalWorkHours.toFixed(2),
-      totalWorkDays: totalWorkDays + totalWeeklyLeaveDays, // إضافة أيام الإجازة إلى أيام العمل
-      totalDeductions: totalDeductions.toFixed(2),
-      totalOvertime: totalOvertime.toFixed(2),
-      totalAbsenceDays,
-      totalWeeklyLeaveDays,
+      totalWorkHours: totals.totalWorkHours.toFixed(2),
+      totalWorkDays: totals.totalWorkDays,
+      totalAbsenceDays: totals.totalAbsenceDays,
+      totalDeductions: totals.totalDeductions.toFixed(2),
+      totalOvertime: totals.totalOvertime.toFixed(2),
+      totalWeeklyLeaveDays: totals.totalWeeklyLeaveDays,
+      totalAnnualLeaveDays: totals.totalAnnualLeaveDays,
+      totalMedicalLeaveDays: totals.totalMedicalLeaveDays,
+      annualLeaveBalance: totals.annualLeaveBalance,
     };
   };
 
@@ -65,9 +109,9 @@ const UploadFingerprint = () => {
 
   if (!user || user.role !== 'admin') return null;
 
-  const handleFileChange = e => setFile(e.target.files[0]);
+  const handleFileChange = (e) => setFile(e.target.files[0]);
 
-  const handleUpload = async e => {
+  const handleUpload = async (e) => {
     e.preventDefault();
     if (!file) return alert('يرجى اختيار ملف أولاً');
     setLoading(true);
@@ -80,8 +124,8 @@ const UploadFingerprint = () => {
         { headers: { Authorization: `Bearer ${localStorage.getItem('token')}` } }
       );
       setReports(res.data.reports);
-      alert('تم رفع الملف وتحديث البيانات');
       setFile(null);
+      alert('تم رفع الملف وتحديث البيانات بنجاح');
     } catch (err) {
       console.error('Error uploading file:', err.response?.data?.error || err.message);
       alert(`خطأ أثناء رفع الملف: ${err.response?.data?.error || err.message}`);
@@ -109,6 +153,27 @@ const UploadFingerprint = () => {
     }
   };
 
+  const handleShowAll = async () => {
+    setLoading(true);
+    try {
+      const res = await axios.get(
+        `${process.env.REACT_APP_API_URL}/api/fingerprints`,
+        {
+          headers: { Authorization: `Bearer ${localStorage.getItem('token')}` },
+        }
+      );
+      setReports(res.data.reports);
+      setSearchCode('');
+      setDateFrom('');
+      setDateTo('');
+    } catch (err) {
+      console.error('Error fetching all reports:', err.response?.data?.error || err.message);
+      alert(`خطأ أثناء جلب جميع السجلات: ${err.response?.data?.error || err.message}`);
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const handleDeleteAllFingerprints = async () => {
     if (!window.confirm('هل أنت متأكد من حذف جميع سجلات البصمات؟ هذه العملية لا يمكن التراجع عنها!')) {
       return;
@@ -130,339 +195,515 @@ const UploadFingerprint = () => {
     }
   };
 
-  const handleEdit = r => {
-    setEditingReport({
-      ...r,
-      checkIn: r.checkIn ? DateTime.fromISO(r.checkIn, { zone: 'Africa/Cairo' }).toFormat('HH:mm:ss') : '',
-      checkOut: r.checkOut ? DateTime.fromISO(r.checkOut, { zone: 'Africa/Cairo' }).toFormat('HH:mm:ss') : '',
-      date: r.date ? DateTime.fromISO(r.date, { zone: 'Africa/Cairo' }).toFormat('yyyy-MM-dd') : '',
-      code: r.code || '',
-    });
-    setIsCreatingMission(false);
+  const handleEditReport = (updatedReport) => {
+    setReports((prev) =>
+      prev.map((report) => (report._id === updatedReport._id ? updatedReport : report))
+    );
   };
 
-  const handleCreateMission = () => {
-    setEditingReport({
-      code: '',
-      date: '',
-      checkIn: '09:00:00',
-      checkOut: '17:30:00',
-    });
-    setIsCreatingMission(true);
-  };
-
-  const validateTimeFormat = (time) => {
-    const timeRegex = /^([0-1][0-9]|2[0-3]):[0-5][0-9]:[0-5][0-9]$/;
-    return timeRegex.test(time);
-  };
-
-  const handleSave = async () => {
-    if (!editingReport) return;
-    const { _id, code, date, checkIn, checkOut } = editingReport;
-
-    if (!code || !date) {
-      alert('كود الموظف والتاريخ مطلوبان');
-      return;
-    }
-    if ((checkIn && !validateTimeFormat(checkIn)) || (checkOut && !validateTimeFormat(checkOut))) {
-      alert('تنسيق الوقت غير صالح، يجب أن يكون HH:mm:ss');
-      return;
-    }
-
+  const handleCreateMission = async (e) => {
+    e.preventDefault();
     setLoading(true);
     try {
-      const payload = { code, date, checkIn: checkIn || null, checkOut: checkOut || null };
-      console.log('Sending request:', { isCreatingMission, payload });
-
-      let res;
-      if (isCreatingMission) {
-        res = await axios.post(
-          `${process.env.REACT_APP_API_URL}/api/fingerprints/create`,
-          payload,
-          { headers: { Authorization: `Bearer ${localStorage.getItem('token')}` } }
-        );
-        setReports(prev => [...prev, res.data.report]);
-      } else {
-        res = await axios.put(
-          `${process.env.REACT_APP_API_URL}/api/fingerprints/${_id}`,
-          payload,
-          { headers: { Authorization: `Bearer ${localStorage.getItem('token')}` } }
-        );
-        setReports(prev =>
-          prev.map(r => (r._id === res.data.report._id ? res.data.report : r))
-        );
+      const token = localStorage.getItem('token');
+      const missionDate = DateTime.fromISO(missionDetails.date, { zone: 'Africa/Cairo' });
+      if (!missionDate.isValid) {
+        throw new Error('تاريخ المأمورية غير صالح');
       }
 
-      console.log('Response:', res.data);
-      setEditingReport(null);
+      const timeRegex = /^([0-1][0-9]|2[0-3]):[0-5][0-9]:[0-5][0-9]$/;
+      if (
+        (missionDetails.checkIn && !timeRegex.test(missionDetails.checkIn)) ||
+        (missionDetails.checkOut && !timeRegex.test(missionDetails.checkOut))
+      ) {
+        throw new Error('تنسيق الوقت غير صالح، يجب أن يكون HH:mm:ss');
+      }
+
+      const checkIn = missionDetails.checkIn
+        ? DateTime.fromFormat(
+            `${missionDetails.date} ${missionDetails.checkIn}`,
+            'yyyy-MM-dd HH:mm:ss',
+            { zone: 'Africa/Cairo' }
+          ).toJSDate()
+        : null;
+      const checkOut = missionDetails.checkOut
+        ? DateTime.fromFormat(
+            `${missionDetails.date} ${missionDetails.checkOut}`,
+            'yyyy-MM-dd HH:mm:ss',
+            { zone: 'Africa/Cairo' }
+          ).toJSDate()
+        : null;
+
+      const workHours = checkIn && checkOut ? 8 : 0;
+
+      const response = await axios.post(
+        `${process.env.REACT_APP_API_URL}/api/fingerprints/mission`,
+        {
+          code: missionDetails.code,
+          date: missionDetails.date,
+          checkIn: missionDetails.checkIn || null,
+          checkOut: missionDetails.checkOut || null,
+          missionType: missionDetails.missionType,
+          description: missionDetails.description,
+        },
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+
+      setReports((prev) => [
+        ...prev.filter((r) => r._id !== response.data.report._id),
+        {
+          ...response.data.report,
+          workHours,
+          absence: 'لا',
+          annualLeave: 'لا',
+          medicalLeave: 'لا',
+        },
+      ]);
       setIsCreatingMission(false);
-      alert(isCreatingMission ? 'تم إنشاء سجل المأمورية بنجاح' : 'تم حفظ التعديلات بنجاح');
+      setMissionDetails({ code: '', date: '', checkIn: '', checkOut: '', missionType: 'مهمة رسمية', description: '' });
+      alert('تم إنشاء المأمورية بنجاح');
     } catch (err) {
-      console.error('Error saving:', err.response?.data?.error || err.message);
-      alert(`خطأ أثناء الحفظ: ${err.response?.data?.error || err.message}`);
+      console.error('Error creating mission:', err.response?.data?.error || err.message);
+      alert(`خطأ أثناء إنشاء المأمورية: ${err.response?.data?.error || err.message}`);
     } finally {
       setLoading(false);
     }
   };
 
-  const handleMissionAttendance = () => {
-    if (!editingReport) return;
-    setEditingReport({
-      ...editingReport,
-      checkIn: '09:00:00',
-      checkOut: '17:30:00',
-    });
+  const handleCreateMedicalLeave = async (e) => {
+    e.preventDefault();
+    setLoading(true);
+    try {
+      const startDate = DateTime.fromISO(medicalLeaveDetails.dateFrom, { zone: 'Africa/Cairo' });
+      const endDate = DateTime.fromISO(medicalLeaveDetails.dateTo, { zone: 'Africa/Cairo' });
+
+      if (!startDate.isValid || !endDate.isValid) {
+        throw new Error('تاريخ البداية أو النهاية غير صالح');
+      }
+
+      if (startDate > endDate) {
+        throw new Error('تاريخ البداية يجب أن يكون قبل تاريخ النهاية');
+      }
+
+      const response = await axios.post(
+        `${process.env.REACT_APP_API_URL}/api/fingerprints/medical-leave`,
+        {
+          code: medicalLeaveDetails.code,
+          dateFrom: medicalLeaveDetails.dateFrom,
+          dateTo: medicalLeaveDetails.dateTo,
+        },
+        { headers: { Authorization: `Bearer ${localStorage.getItem('token')}` } }
+      );
+
+      setReports((prev) => [
+        ...prev.filter((r) => !response.data.reports.some((newR) => newR._id === r._id)),
+        ...response.data.reports,
+      ]);
+      setIsCreatingMedicalLeave(false);
+      setMedicalLeaveDetails({ code: '', dateFrom: '', dateTo: '' });
+      alert('تم إنشاء الإجازة الطبية بنجاح');
+    } catch (err) {
+      console.error('Error creating medical leave:', err.response?.data?.error || err.message);
+      alert(`خطأ أثناء إنشاء الإجازة الطبية: ${err.response?.data?.error || err.message}`);
+    } finally {
+      setLoading(false);
+    }
   };
 
-  const handleSingleFingerprintFilter = () => {
-    setShowSingleFingerprint(!showSingleFingerprint);
+  const handleMissionChange = (e) => {
+    const { name, value } = e.target;
+    setMissionDetails((prev) => ({ ...prev, [name]: value }));
+  };
+
+  const handleMedicalLeaveChange = (e) => {
+    const { name, value } = e.target;
+    setMedicalLeaveDetails((prev) => ({ ...prev, [name]: value }));
   };
 
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="min-h-screen bg-gray-100">
       <NavBar />
-      <motion.div
-        initial={{ opacity: 0, y: 20 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.5, ease: 'easeOut' }}
-        className="p-6 max-w-7xl mx-auto"
-      >
-        <h1 className="text-4xl font-bold text-gray-800 mb-8 text-right">رفع ملف البصمة</h1>
-
-        <div className="bg-white p-6 rounded-xl shadow-md mb-6 border border-gray-100">
-          <h2 className="text-xl font-semibold text-gray-700 mb-4 text-right">رفع ملف</h2>
-          <form onSubmit={handleUpload} className="flex flex-col gap-4">
-            <input
-              type="file"
-              accept=".xlsx,.csv"
-              onChange={handleFileChange}
-              className="border border-gray-300 p-3 rounded-lg w-full text-right bg-gray-50 hover:bg-gray-100 transition-colors duration-200"
-            />
+      <div className="container mx-auto p-6">
+        {/* قسم رفع ملف البصمات */}
+        <motion.div
+          initial={{ opacity: 0, y: -20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.5 }}
+          className="bg-white p-6 rounded-xl shadow-md border border-gray-100 mb-6"
+        >
+          <h2 className="text-xl font-semibold text-gray-700 mb-4 text-right">رفع ملف البصمات</h2>
+          <form onSubmit={handleUpload} className="space-y-4">
+            <div>
+              <label className="block text-gray-700 text-sm font-medium mb-2 text-right">
+                اختر ملف Excel
+              </label>
+              <input
+                type="file"
+                accept=".xlsx, .xls"
+                onChange={handleFileChange}
+                className="w-full px-3 py-2 border rounded-lg text-right"
+              />
+            </div>
             <motion.button
               type="submit"
-              disabled={loading}
-              whileHover={{ scale: 1.05, boxShadow: '0 4px 12px rgba(0,0,0,0.1)' }}
+              disabled={loading || !file}
+              whileHover={{ scale: 1.05 }}
               whileTap={{ scale: 0.95 }}
-              className="bg-blue-600 text-white px-6 py-3 rounded-full hover:bg-blue-700 transition-colors duration-200 disabled:opacity-50 w-32 self-end"
+              className={`bg-blue-600 text-white px-4 py-2 rounded-md hover:bg-blue-700 transition-colors duration-300 ${
+                loading || !file ? 'opacity-50 cursor-not-allowed' : ''
+              }`}
             >
-              {loading ? 'جاري الرفع...' : 'رفع'}
+              {loading ? 'جارٍ الرفع...' : 'رفع الملف'}
             </motion.button>
           </form>
-        </div>
+        </motion.div>
 
-        <div className="bg-white p-6 rounded-xl shadow-md mb-6 border border-gray-100">
+        {/* قسم البحث */}
+        <motion.div
+          initial={{ opacity: 0, y: -20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.5, delay: 0.2 }}
+          className="bg-white p-6 rounded-xl shadow-md border border-gray-100 mb-6"
+        >
           <h2 className="text-xl font-semibold text-gray-700 mb-4 text-right">البحث في التقارير</h2>
-          <div className="flex flex-col gap-4 md:flex-row md:gap-2">
-            <input
-              type="text"
-              placeholder="كود الموظف"
-              value={searchCode}
-              onChange={e => setSearchCode(e.target.value)}
-              className="p-3 border border-gray-300 rounded-lg flex-1 text-right bg-gray-50 hover:bg-gray-100 transition-colors duration-200"
-            />
-            <input
-              type="date"
-              value={dateFrom}
-              onChange={e => setDateFrom(e.target.value)}
-              className="p-3 border border-gray-300 rounded-lg bg-gray-50 hover:bg-gray-100 transition-colors duration-200"
-            />
-            <input
-              type="date"
-              value={dateTo}
-              onChange={e => setDateTo(e.target.value)}
-              className="p-3 border border-gray-300 rounded-lg bg-gray-50 hover:bg-gray-100 transition-colors duration-200"
-            />
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div>
+              <label className="block text-gray-700 text-sm font-medium mb-2 text-right">
+                كود الموظف
+              </label>
+              <input
+                type="text"
+                value={searchCode}
+                onChange={(e) => setSearchCode(e.target.value)}
+                className="w-full px-3 py-2 border rounded-lg text-right"
+                placeholder="أدخل كود الموظف"
+              />
+            </div>
+            <div>
+              <label className="block text-gray-700 text-sm font-medium mb-2 text-right">
+                من تاريخ
+              </label>
+              <input
+                type="date"
+                value={dateFrom}
+                onChange={(e) => setDateFrom(e.target.value)}
+                className="w-full px-3 py-2 border rounded-lg text-right"
+              />
+            </div>
+            <div>
+              <label className="block text-gray-700 text-sm font-medium mb-2 text-right">
+                إلى تاريخ
+              </label>
+              <input
+                type="date"
+                value={dateTo}
+                onChange={(e) => setDateTo(e.target.value)}
+                className="w-full px-3 py-2 border rounded-lg text-right"
+              />
+            </div>
+          </div>
+          <div className="flex justify-end gap-4 mt-4">
             <motion.button
               onClick={handleSearch}
               disabled={loading}
-              whileHover={{ scale: 1.05, boxShadow: '0 4px 12px rgba(0,0,0,0.1)' }}
+              whileHover={{ scale: 1.05 }}
               whileTap={{ scale: 0.95 }}
-              className="bg-blue-600 text-white px-6 py-3 rounded-full hover:bg-blue-700 transition-colors duration-200 disabled:opacity-50"
+              className={`bg-blue-600 text-white px-4 py-2 rounded-md hover:bg-blue-700 transition-colors duration-300 ${
+                loading ? 'opacity-50 cursor-not-allowed' : ''
+              }`}
             >
-              {loading ? 'جاري البحث...' : 'بحث'}
+              {loading ? 'جارٍ البحث...' : 'بحث'}
+            </motion.button>
+            <motion.button
+              onClick={handleShowAll}
+              disabled={loading}
+              whileHover={{ scale: 1.05 }}
+              whileTap={{ scale: 0.95 }}
+              className={`bg-purple-600 text-white px-4 py-2 rounded-md hover:bg-purple-700 transition-colors duration-300 ${
+                loading ? 'opacity-50 cursor-not-allowed' : ''
+              }`}
+            >
+              {loading ? 'جارٍ الجلب...' : 'عرض الكل'}
+            </motion.button>
+            <motion.button
+              onClick={() => setIsCreatingMission(true)}
+              whileHover={{ scale: 1.05 }}
+              whileTap={{ scale: 0.95 }}
+              className="bg-green-600 text-white px-4 py-2 rounded-md hover:bg-green-700 transition-colors duration-300"
+            >
+              إنشاء مأمورية
+            </motion.button>
+            <motion.button
+              onClick={() => setIsCreatingMedicalLeave(true)}
+              whileHover={{ scale: 1.05 }}
+              whileTap={{ scale: 0.95 }}
+              className="bg-yellow-600 text-white px-4 py-2 rounded-md hover:bg-yellow-700 transition-colors duration-300"
+            >
+              إضافة إجازة طبية
+            </motion.button>
+            <motion.button
+              onClick={handleDeleteAllFingerprints}
+              disabled={loading}
+              whileHover={{ scale: 1.05 }}
+              whileTap={{ scale: 0.95 }}
+              className={`bg-red-600 text-white px-4 py-2 rounded-md hover:bg-red-700 transition-colors duration-300 ${
+                loading ? 'opacity-50 cursor-not-allowed' : ''
+              }`}
+            >
+              حذف جميع البصمات
             </motion.button>
           </div>
-        </div>
+          <div className="flex justify-end gap-4 mt-4">
+            <label className="flex items-center text-gray-700 text-sm font-medium">
+              <input
+                type="checkbox"
+                checked={showSingleFingerprint}
+                onChange={() => setShowSingleFingerprint(!showSingleFingerprint)}
+                className="mr-2"
+              />
+              عرض البصمات الفردية فقط
+            </label>
+            <label className="flex items-center text-gray-700 text-sm font-medium">
+              <input
+                type="checkbox"
+                checked={showAbsenceDays}
+                onChange={() => setShowAbsenceDays(!showAbsenceDays)}
+                className="mr-2"
+              />
+              عرض أيام الغياب فقط
+            </label>
+          </div>
+        </motion.div>
 
-        <div className="flex gap-4 mb-6">
-          <motion.button
-            onClick={handleCreateMission}
-            whileHover={{ scale: 1.05, boxShadow: '0 4px 12px rgba(0,0,0,0.1)' }}
-            whileTap={{ scale: 0.95 }}
-            className="bg-green-600 text-white px-6 py-3 rounded-full hover:bg-green-700 transition-colors duration-200"
-          >
-            إضافة مأمورية جديدة
-          </motion.button>
-          <motion.button
-            onClick={handleSingleFingerprintFilter}
-            whileHover={{ scale: 1.05, boxShadow: '0 4px 12px rgba(0,0,0,0.1)' }}
-            whileTap={{ scale: 0.95 }}
-            className={`px-6 py-3 rounded-full transition-colors duration-200 text-white ${
-              showSingleFingerprint ? 'bg-red-600 hover:bg-red-700' : 'bg-purple-600 hover:bg-purple-700'
-            }`}
-          >
-            {showSingleFingerprint ? 'إلغاء فلتر البصمة الواحدة' : 'فلتر البصمات ذات البصمة الواحدة'}
-          </motion.button>
-          <motion.button
-            onClick={handleDeleteAllFingerprints}
-            whileHover={{ scale: 1.05, boxShadow: '0 4px 12px rgba(0,0,0,0.1)' }}
-            whileTap={{ scale: 0.95 }}
-            className="bg-red-600 text-white px-6 py-3 rounded-full hover:bg-red-700 transition-colors duration-200"
-          >
-            حذف جميع البصمات
-          </motion.button>
-        </div>
-
-        <ReportTable reports={filteredReports} onEdit={handleEdit} />
-
-        {filteredReports.length > 0 && (
-          <motion.div
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.5, ease: 'easeOut' }}
-            className="bg-white p-6 rounded-xl shadow-md mt-6 border border-gray-100"
-          >
-            <h2 className="text-xl font-semibold text-gray-700 mb-4 text-right">إجماليات الفترة</h2>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-right">
-              <motion.div
-                whileHover={{ scale: 1.02 }}
-                className="p-4 bg-gray-50 rounded-lg hover:bg-gray-100 transition-colors duration-200"
-              >
-                <strong>إجمالي ساعات العمل:</strong> {totals.totalWorkHours} ساعة
-              </motion.div>
-              <motion.div
-                whileHover={{ scale: 1.02 }}
-                className="p-4 bg-gray-50 rounded-lg hover:bg-gray-100 transition-colors duration-200"
-              >
-                <strong>إجمالي أيام العمل:</strong> {totals.totalWorkDays} يوم
-              </motion.div>
-              <motion.div
-                whileHover={{ scale: 1.02 }}
-                className="p-4 bg-gray-50 rounded-lg hover:bg-gray-100 transition-colors duration-200"
-              >
-                <strong>إجمالي أيام الغياب:</strong> {totals.totalAbsenceDays} يوم
-              </motion.div>
-              <motion.div
-                whileHover={{ scale: 1.02 }}
-                className="p-4 bg-gray-50 rounded-lg hover:bg-gray-100 transition-colors duration-200"
-              >
-                <strong>إجمالي الخصومات (أيام):</strong> {totals.totalDeductions} يوم
-              </motion.div>
-              <motion.div
-                whileHover={{ scale: 1.02 }}
-                className="p-4 bg-gray-50 rounded-lg hover:bg-gray-100 transition-colors duration-200"
-              >
-                <strong>إجمالي الساعات الإضافية:</strong> {totals.totalOvertime} ساعة
-              </motion.div>
-              <motion.div
-                whileHover={{ scale: 1.02 }}
-                className="p-4 bg-gray-50 rounded-lg hover:bg-gray-100 transition-colors duration-200"
-              >
-                <strong>إجمالي أيام الإجازة الأسبوعية:</strong> {totals.totalWeeklyLeaveDays} يوم
-              </motion.div>
-            </div>
-          </motion.div>
-        )}
-
+        {/* نموذج إنشاء مأمورية */}
         <AnimatePresence>
-          {editingReport && (
+          {isCreatingMission && (
             <motion.div
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              transition={{ duration: 0.3 }}
+              initial={{ opacity: 0, scale: 0.8 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.8 }}
               className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50"
             >
               <motion.div
-                initial={{ scale: 0.8, opacity: 0 }}
-                animate={{ scale: 1, opacity: 1 }}
-                exit={{ scale: 0.8, opacity: 0 }}
-                transition={{ duration: 0.3, ease: 'easeOut' }}
-                className="bg-white p-6 rounded-xl shadow-xl w-full max-w-md border border-gray-100"
+                className="bg-white p-6 rounded-xl shadow-lg w-full max-w-md"
+                onClick={(e) => e.stopPropagation()}
               >
-                <h2 className="text-lg font-semibold text-gray-700 mb-4 text-right">
-                  {isCreatingMission ? 'إضافة مأمورية جديدة' : 'تعديل التقرير'}
-                </h2>
-                <div className="grid grid-cols-1 gap-3">
-                  <label className="flex flex-col text-right">
-                    كود الموظف:
+                <h2 className="text-xl font-semibold text-gray-700 mb-4 text-right">إنشاء مأمورية</h2>
+                <form onSubmit={handleCreateMission} className="space-y-4">
+                  <div>
+                    <label className="block text-gray-700 text-sm font-medium mb-2 text-right">
+                      كود الموظف
+                    </label>
                     <input
                       type="text"
-                      placeholder="أدخل كود الموظف"
-                      value={editingReport.code}
-                      onChange={e => setEditingReport({ ...editingReport, code: e.target.value })}
-                      className="w-full border border-gray-300 p-2 rounded text-right mb-2 bg-gray-50 hover:bg-gray-100 transition-colors duration-150"
+                      name="code"
+                      value={missionDetails.code}
+                      onChange={handleMissionChange}
+                      className="w-full px-3 py-2 border rounded-lg text-right"
+                      required
                     />
-                  </label>
-                  <label className="flex flex-col text-right">
-                    التاريخ:
+                  </div>
+                  <div>
+                    <label className="block text-gray-700 text-sm font-medium mb-2 text-right">
+                      تاريخ المأمورية
+                    </label>
                     <input
                       type="date"
-                      value={editingReport.date}
-                      onChange={e => setEditingReport({ ...editingReport, date: e.target.value })}
-                      className="w-full border border-gray-300 p-2 rounded text-right mb-2 bg-gray-50 hover:bg-gray-100 transition-colors duration-150"
+                      name="date"
+                      value={missionDetails.date}
+                      onChange={handleMissionChange}
+                      className="w-full px-3 py-2 border rounded-lg text-right"
+                      required
                     />
-                  </label>
-                  <label className="flex flex-col text-right">
-                    الحضور:
+                  </div>
+                  <div>
+                    <label className="block text-gray-700 text-sm font-medium mb-2 text-right">
+                      توقيت الحضور
+                    </label>
                     <input
-                      type="time"
-                      value={editingReport.checkIn}
-                      onChange={e => setEditingReport({ ...editingReport, checkIn: e.target.value })}
-                      className="w-full border border-gray-300 p-2 rounded text-right mb-2 bg-gray-50 hover:bg-gray-100 transition-colors duration-200"
-                      step="1"
+                      type="text"
+                      name="checkIn"
+                      value={missionDetails.checkIn}
+                      onChange={handleMissionChange}
+                      className="w-full px-3 py-2 border rounded-lg text-right"
+                      placeholder="HH:mm:ss"
                     />
-                  </label>
-                  <label className="flex flex-col text-right">
-                    الانصراف:
+                  </div>
+                  <div>
+                    <label className="block text-gray-700 text-sm font-medium mb-2 text-right">
+                      توقيت الانصراف
+                    </label>
                     <input
-                      type="time"
-                      value={editingReport.checkOut}
-                      onChange={e => setEditingReport({ ...editingReport, checkOut: e.target.value })}
-                      className="w-full border border-gray-300 p-2 rounded text-right bg-gray-50 hover:bg-gray-100 transition-colors duration-200"
-                      step="1"
+                      type="text"
+                      name="checkOut"
+                      value={missionDetails.checkOut}
+                      onChange={handleMissionChange}
+                      className="w-full px-3 py-2 border rounded-lg text-right"
+                      placeholder="HH:mm:ss"
                     />
-                  </label>
-                </div>
-                <div className="flex flex-row-reverse justify-end gap-2 mt-4">
-                  {isCreatingMission && (
-                    <motion.button
-                      onClick={handleMissionAttendance}
-                      disabled={loading}
-                      whileHover={{ scale: 1.05, boxShadow: '0 4px 12px rgba(0,0,0,0.1)' }}
-                      whileTap={{ scale: 0.95 }}
-                      className="bg-green-500 text-white px-3 py-2 rounded-full hover:bg-green-600 transition-colors duration-200 disabled:opacity-50"
+                  </div>
+                  <div>
+                    <label className="block text-gray-700 text-sm font-medium mb-2 text-right">
+                      نوع المأمورية
+                    </label>
+                    <select
+                      name="missionType"
+                      value={missionDetails.missionType}
+                      onChange={handleMissionChange}
+                      className="w-full px-3 py-2 border rounded-lg text-right"
                     >
-                      تعليم حضور مأمورية
+                      <option value="مهمة رسمية">مهمة رسمية</option>
+                      <option value="تدريب">تدريب</option>
+                      <option value="أخرى">أخرى</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-gray-700 text-sm font-medium mb-2 text-right">
+                      الوصف
+                    </label>
+                    <textarea
+                      name="description"
+                      value={missionDetails.description}
+                      onChange={handleMissionChange}
+                      className="w-full px-3 py-2 border rounded-lg text-right"
+                      rows="4"
+                    />
+                  </div>
+                  <div className="flex justify-end gap-4">
+                    <motion.button
+                      type="submit"
+                      disabled={loading}
+                      whileHover={{ scale: 1.05 }}
+                      whileTap={{ scale: 0.95 }}
+                      className={`bg-blue-600 text-white px-4 py-2 rounded-md hover:bg-blue-700 transition-colors duration-300 ${
+                        loading ? 'opacity-50 cursor-not-allowed' : ''
+                      }`}
+                    >
+                      {loading ? 'جارٍ الإنشاء...' : 'إنشاء'}
                     </motion.button>
-                  )}
-                  <motion.button
-                    onClick={() => {
-                      setEditingReport(null);
-                      setIsCreatingMission(false);
-                    }}
-                    disabled={loading}
-                    whileHover={{ scale: 1.05, boxShadow: '0 4px 12px rgba(0,0,0,0.1)' }}
-                    whileTap={{ scale: 0.95 }}
-                    className="bg-gray-200 text-gray-700 px-3 py-2 rounded-full hover:bg-gray-300 transition-colors duration-200 disabled:opacity-50"
-                  >
-                    إلغاء
-                  </motion.button>
-                  <motion.button
-                    onClick={handleSave}
-                    disabled={loading}
-                    whileHover={{ scale: 1.05, boxShadow: '0 4px 12px rgba(0,0,0,0.1)' }}
-                    whileTap={{ scale: 0.95 }}
-                    className="bg-blue-500 text-white px-3 py-2 rounded-full hover:bg-blue-700 transition-colors duration-200 disabled:opacity-50"
-                  >
-                    {loading ? 'جاري الحفظ...' : 'حفظ'}
-                  </motion.button>
-                </div>
+                    <motion.button
+                      type="button"
+                      onClick={() => setIsCreatingMission(false)}
+                      whileHover={{ scale: 1.05 }}
+                      whileTap={{ scale: 0.95 }}
+                      className="bg-gray-600 text-white px-4 py-2 rounded-md hover:bg-gray-700 transition-colors duration-300"
+                    >
+                      إلغاء
+                    </motion.button>
+                  </div>
+                </form>
               </motion.div>
             </motion.div>
           )}
         </AnimatePresence>
-      </motion.div>
+
+        {/* نموذج إضافة إجازة طبية */}
+        <AnimatePresence>
+          {isCreatingMedicalLeave && (
+            <motion.div
+              initial={{ opacity: 0, scale: 0.8 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.8 }}
+              className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50"
+            >
+              <motion.div
+                className="bg-white p-6 rounded-xl shadow-lg w-full max-w-md"
+                onClick={(e) => e.stopPropagation()}
+              >
+                <h2 className="text-xl font-semibold text-gray-700 mb-4 text-right">إضافة إجازة طبية</h2>
+                <form onSubmit={handleCreateMedicalLeave} className="space-y-4">
+                  <div>
+                    <label className="block text-gray-700 text-sm font-medium mb-2 text-right">
+                      كود الموظف
+                    </label>
+                    <input
+                      type="text"
+                      name="code"
+                      value={medicalLeaveDetails.code}
+                      onChange={handleMedicalLeaveChange}
+                      className="w-full px-3 py-2 border rounded-lg text-right"
+                      required
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-gray-700 text-sm font-medium mb-2 text-right">
+                      من تاريخ
+                    </label>
+                    <input
+                      type="date"
+                      name="dateFrom"
+                      value={medicalLeaveDetails.dateFrom}
+                      onChange={handleMedicalLeaveChange}
+                      className="w-full px-3 py-2 border rounded-lg text-right"
+                      required
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-gray-700 text-sm font-medium mb-2 text-right">
+                      إلى تاريخ
+                    </label>
+                    <input
+                      type="date"
+                      name="dateTo"
+                      value={medicalLeaveDetails.dateTo}
+                      onChange={handleMedicalLeaveChange}
+                      className="w-full px-3 py-2 border rounded-lg text-right"
+                      required
+                    />
+                  </div>
+                  <div className="flex justify-end gap-4">
+                    <motion.button
+                      type="submit"
+                      disabled={loading}
+                      whileHover={{ scale: 1.05 }}
+                      whileTap={{ scale: 0.95 }}
+                      className={`bg-blue-600 text-white px-4 py-2 rounded-md hover:bg-blue-700 transition-colors duration-300 ${
+                        loading ? 'opacity-50 cursor-not-allowed' : ''
+                      }`}
+                    >
+                      {loading ? 'جارٍ الإنشاء...' : 'إنشاء'}
+                    </motion.button>
+                    <motion.button
+                      type="button"
+                      onClick={() => setIsCreatingMedicalLeave(false)}
+                      whileHover={{ scale: 1.05 }}
+                      whileTap={{ scale: 0.95 }}
+                      className="bg-gray-600 text-white px-4 py-2 rounded-md hover:bg-gray-700 transition-colors duration-300"
+                    >
+                      إلغاء
+                    </motion.button>
+                  </div>
+                </form>
+              </motion.div>
+            </motion.div>
+          )}
+        </AnimatePresence>
+
+        {/* جدول التقارير */}
+        {filteredReports.length > 0 && (
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.5, delay: 0.4 }}
+            className="bg-white p-6 rounded-xl shadow-md border border-gray-100 mb-6"
+          >
+            <h2 className="text-xl font-semibold text-gray-700 mb-4 text-right">التقارير</h2>
+            <ReportTable reports={filteredReports} onEdit={handleEditReport} />
+            <div className="mt-4 text-right">
+              <h3 className="text-lg font-semibold text-gray-700 mb-2">إجماليات الفترة</h3>
+              <p>إجمالي ساعات العمل: {totals.totalWorkHours} ساعة</p>
+              <p>إجمالي أيام العمل: {totals.totalWorkDays} يوم</p>
+              <p>إجمالي أيام الغياب: {totals.totalAbsenceDays} يوم</p>
+              <p>إجمالي الخصومات: {totals.totalDeductions} يوم</p>
+              <p>إجمالي الساعات الإضافية: {totals.totalOvertime} ساعة</p>
+              <p>إجمالي أيام الإجازة الأسبوعية: {totals.totalWeeklyLeaveDays} يوم</p>
+              <p>إجمالي أيام الإجازة السنوية (الفترة): {totals.totalAnnualLeaveDays} يوم</p>
+              <p>إجمالي أيام الإجازة الطبية: {totals.totalMedicalLeaveDays} يوم</p>
+              <p>رصيد الإجازات السنوية: {totals.annualLeaveBalance} يوم</p>
+            </div>
+          </motion.div>
+        )}
+      </div>
     </div>
   );
 };

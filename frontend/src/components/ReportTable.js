@@ -4,12 +4,24 @@ import { DateTime } from 'luxon';
 import { motion } from 'framer-motion';
 import EditModal from './EditModal';
 
-const ReportTable = ({ reports, onEdit, totalWeeklyLeaveDays }) => {
+const ReportTable = ({ reports, onEdit, totalWeeklyLeaveDays, totalAnnualLeaveDays }) => {
   const [selectedReport, setSelectedReport] = useState(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
 
   const handleEdit = (report) => {
-    setSelectedReport(report);
+    const formattedReport = {
+      ...report,
+      date: report.date ? DateTime.fromISO(report.date, { zone: 'Africa/Cairo' }).toFormat('yyyy-MM-dd') : '',
+      checkIn: report.checkIn && DateTime.fromFormat(report.checkIn, 'hh:mm:ss a', { zone: 'Africa/Cairo' }).isValid
+        ? DateTime.fromFormat(report.checkIn, 'hh:mm:ss a', { zone: 'Africa/Cairo' }).toFormat('HH:mm:ss')
+        : '',
+      checkOut: report.checkOut && DateTime.fromFormat(report.checkOut, 'hh:mm:ss a', { zone: 'Africa/Cairo' }).isValid
+        ? DateTime.fromFormat(report.checkOut, 'hh:mm:ss a', { zone: 'Africa/Cairo' }).toFormat('HH:mm:ss')
+        : '',
+      absence: report.absence === 'نعم',
+      annualLeave: report.annualLeave === 'نعم',
+    };
+    setSelectedReport(formattedReport);
     setIsModalOpen(true);
   };
 
@@ -19,19 +31,20 @@ const ReportTable = ({ reports, onEdit, totalWeeklyLeaveDays }) => {
   };
 
   const handleReportUpdate = (updatedReport) => {
-    onEdit(updatedReport); // تحديث السجل في المكون الأب
+    onEdit(updatedReport);
     setIsModalOpen(false);
     setSelectedReport(null);
   };
 
-  // حساب الإجماليات
   const totals = reports.reduce(
     (acc, report) => {
       acc.totalWorkHours += report.workHours || 0;
-      acc.totalWorkDays += report.absence === 'لا' ? 1 : 0;
+      acc.totalWorkDays += report.absence === 'لا' && report.weeklyLeaveDays === 0 && report.annualLeave === 'لا' ? 1 : 0;
       acc.totalAbsenceDays += report.absence === 'نعم' ? 1 : 0;
       acc.totalDeductions += (report.lateDeduction || 0) + (report.earlyLeaveDeduction || 0);
       acc.totalOvertime += report.overtime || 0;
+      acc.totalWeeklyLeaveDays += report.weeklyLeaveDays || 0;
+      acc.totalAnnualLeaveDays += report.annualLeave === 'نعم' ? 1 : 0;
       return acc;
     },
     {
@@ -40,6 +53,8 @@ const ReportTable = ({ reports, onEdit, totalWeeklyLeaveDays }) => {
       totalAbsenceDays: 0,
       totalDeductions: 0,
       totalOvertime: 0,
+      totalWeeklyLeaveDays: 0,
+      totalAnnualLeaveDays: 0,
     }
   );
 
@@ -61,9 +76,11 @@ const ReportTable = ({ reports, onEdit, totalWeeklyLeaveDays }) => {
               <th className="px-4 py-3 text-right text-sm font-semibold text-gray-800 border-b">خصم التأخير</th>
               <th className="px-4 py-3 text-right text-sm font-semibold text-gray-800 border-b">خصم الانصراف المبكر</th>
               <th className="px-4 py-3 text-right text-sm font-semibold text-gray-800 border-b">الغياب</th>
+              <th className="px-4 py-3 text-right text-sm font-semibold text-gray-800 border-b">الإجازة السنوية</th>
               <th className="px-4 py-3 text-right text-sm font-semibold text-gray-800 border-b">أيام العمل الأسبوعية</th>
               <th className="px-4 py-3 text-right text-sm font-semibold text-gray-800 border-b">أيام الإجازة الأسبوعية</th>
-              <th className="px-4 py-3 text-right text-sm font-semibold text-gray-800 border-b">رصيد السماح بالتأخير (دقائق)</th>
+              <th className="px-4 py-3 text-right text-sm font-semibold text-gray-800 border-b">رصيد السماح بالتأخير</th>
+              <th className="px-4 py-3 text-right text-sm font-semibold text-gray-800 border-b">إجمالي الإجازة السنوية</th>
               <th className="px-4 py-3 text-right text-sm font-semibold text-gray-800 border-b">إجراءات</th>
             </tr>
           </thead>
@@ -83,7 +100,7 @@ const ReportTable = ({ reports, onEdit, totalWeeklyLeaveDays }) => {
                   whileHover={{ backgroundColor: '#f1fafb' }}
                   transition={{ duration: 0.2 }}
                   className={
-                    report.absence === 'نعم' ? 'bg-red-50' : report.isSingleFingerprint === 'نعم' ? 'bg-yellow-50' : ''
+                    report.absence === 'نعم' ? 'bg-red-50' : report.isSingleFingerprint === 'نعم' ? 'bg-yellow-50' : report.annualLeave === 'نعم' ? 'bg-green-50' : ''
                   }
                 >
                   <td className="px-4 py-2 text-right text-sm">{report.code}</td>
@@ -103,9 +120,11 @@ const ReportTable = ({ reports, onEdit, totalWeeklyLeaveDays }) => {
                   <td className="px-4 py-2 text-right text-sm">{(report.lateDeduction || 0).toFixed(2)}</td>
                   <td className="px-4 py-2 text-right text-sm">{(report.earlyLeaveDeduction || 0).toFixed(2)}</td>
                   <td className="px-4 py-2 text-right text-sm">{report.absence}</td>
+                  <td className="px-4 py-2 text-right text-sm">{report.annualLeave}</td>
                   <td className="px-4 py-2 text-right text-sm">{report.workDaysPerWeek || '-'}</td>
                   <td className="px-4 py-2 text-right text-sm">{report.weeklyLeaveDays || '-'}</td>
                   <td className="px-4 py-2 text-right text-sm">{report.monthlyLateAllowance !== undefined ? report.monthlyLateAllowance : '-'}</td>
+                  <td className="px-4 py-2 text-right text-sm">{report.totalAnnualLeave !== undefined ? report.totalAnnualLeave : '-'}</td>
                   <td className="px-4 py-2 text-right">
                     <motion.button
                       onClick={() => handleEdit(report)}
@@ -129,7 +148,9 @@ const ReportTable = ({ reports, onEdit, totalWeeklyLeaveDays }) => {
         <p>إجمالي أيام الغياب: {totals.totalAbsenceDays} يوم</p>
         <p>إجمالي الخصومات: {totals.totalDeductions.toFixed(2)} يوم</p>
         <p>إجمالي الساعات الإضافية: {totals.totalOvertime.toFixed(2)} ساعة</p>
-        <p>إجمالي أيام الإجازة الأسبوعية: {totalWeeklyLeaveDays || 0} يوم</p>
+        <p>إجمالي أيام الإجازة الأسبوعية: {totals.totalWeeklyLeaveDays || 0} يوم</p>
+        <p>إجمالي أيام الإجازة السنوية (الفترة): {totals.totalAnnualLeaveDays || 0} يوم</p>
+        <p>إجمالي أيام الإجازة السنوية (السنة): {reports[0]?.totalAnnualLeave || 0} يوم</p>
       </div>
       <EditModal
         report={selectedReport}
@@ -142,3 +163,4 @@ const ReportTable = ({ reports, onEdit, totalWeeklyLeaveDays }) => {
 };
 
 export default ReportTable;
+

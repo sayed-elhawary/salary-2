@@ -1,5 +1,6 @@
 import XLSX from 'xlsx';
 import { DateTime } from 'luxon';
+import Fingerprint from '../models/Fingerprint.js';
 
 export const parseFingerprintFile = async (file) => {
   try {
@@ -21,22 +22,21 @@ export const parseFingerprintFile = async (file) => {
       throw new Error('لا توجد بيانات في ملف Excel');
     }
 
-    console.log('Excel data rows:', data); // سجل لعرض البيانات الأولية
+    console.log('Excel data rows:', data.length);
 
     const reports = [];
     const groupedByCodeAndDate = {};
 
-    data.forEach((row, index) => {
+    for (const [index, row] of data.entries()) {
       try {
         const code = row['No.']?.toString();
         const dateTimeStr = row['Date/Time'];
 
         if (!code || !dateTimeStr) {
           console.warn(`Skipping row ${index + 2}: Missing code or date/time - Code: ${code}, Date/Time: ${dateTimeStr}`);
-          return;
+          continue;
         }
 
-        // دعم تنسيقات متعددة للتاريخ/الوقت
         let dateTime = DateTime.fromFormat(dateTimeStr, 'M/d/yyyy h:mm:ss a', {
           zone: 'Africa/Cairo',
           locale: 'en-US',
@@ -65,7 +65,7 @@ export const parseFingerprintFile = async (file) => {
 
         if (!dateTime.isValid) {
           console.warn(`Skipping row ${index + 2}: Invalid date/time format - ${dateTimeStr}, Reason: ${dateTime.invalidReason}`);
-          return;
+          continue;
         }
 
         const date = dateTime.toJSDate();
@@ -80,7 +80,7 @@ export const parseFingerprintFile = async (file) => {
       } catch (err) {
         console.error(`Error processing row ${index + 2}:`, err.message);
       }
-    });
+    }
 
     for (const key in groupedByCodeAndDate) {
       try {
@@ -88,7 +88,6 @@ export const parseFingerprintFile = async (file) => {
         let checkIn = null;
         let checkOut = null;
 
-        // تصفية التوقيتات القريبة جدًا (أقل من 60 ثانية)
         const filteredEntries = [];
         let lastTime = null;
         for (const entry of entries) {
@@ -114,19 +113,31 @@ export const parseFingerprintFile = async (file) => {
 
         if (checkIn || checkOut) {
           const [code, dateKey] = key.split('-');
-          reports.push({
+          const existingReport = await Fingerprint.findOne({
             code,
-            checkIn,
-            checkOut,
-            workHours: 0,
-            overtime: 0,
-            lateMinutes: 0,
-            lateDeduction: 0,
-            earlyLeaveDeduction: 0,
-            absence: false,
-            date: filteredEntries[0].toJSDate(),
-            workDaysPerWeek: 5, // سيتم تحديثه لاحقًا في fingerprints.js
+            date: {
+              $gte: DateTime.fromISO(dateKey, { zone: 'Africa/Cairo' }).startOf('day').toJSDate(),
+              $lte: DateTime.fromISO(dateKey, { zone: 'Africa/Cairo' }).endOf('day').toJSDate(),
+            },
           });
+
+          if (!existingReport) {
+            reports.push({
+              code,
+              checkIn,
+              checkOut,
+              workHours: 0,
+              overtime: 0,
+              lateMinutes: 0,
+              lateDeduction: 0,
+              earlyLeaveDeduction: 0,
+              absence: false,
+              date: filteredEntries[0].toJSDate(),
+              workDaysPerWeek: 5, // سيتم تحديثه لاحقًا
+            });
+          } else {
+            console.log(`Skipping duplicate report for code ${code} on ${dateKey}`);
+          }
         }
       } catch (err) {
         console.error(`Error processing group ${key}:`, err.message);
@@ -138,7 +149,7 @@ export const parseFingerprintFile = async (file) => {
       throw new Error('لا توجد بيانات صالحة في الملف');
     }
 
-    console.log('Generated reports:', reports);
+    console.log('Generated reports:', reports.length);
     return reports;
   } catch (error) {
     console.error('Error in parseFingerprintFile:', error.message);

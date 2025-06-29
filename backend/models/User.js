@@ -10,7 +10,6 @@ const userSchema = new mongoose.Schema(
       required: [true, 'كود الموظف مطلوب'],
       unique: true,
       trim: true,
-      minlength: [3, 'كود الموظف يجب أن يكون 3 أحرف على الأقل'],
       maxlength: [10, 'كود الموظف يجب ألا يتجاوز 10 أحرف'],
     },
     fullName: {
@@ -19,19 +18,6 @@ const userSchema = new mongoose.Schema(
       trim: true,
       minlength: [2, 'الاسم الكامل يجب أن يكون حرفين على الأقل'],
       maxlength: [50, 'الاسم الكامل يجب ألا يتجاوز 50 حرفًا'],
-    },
-    email: {
-      type: String,
-      trim: true,
-      lowercase: true,
-      match: [/^\S+@\S+\.\S+$/, 'البريد الإلكتروني غير صالح'],
-      unique: true,
-      sparse: true,
-    },
-    phone: {
-      type: String,
-      trim: true,
-      match: [/^\+?\d{10,15}$/, 'رقم الهاتف غير صالح'],
     },
     password: {
       type: String,
@@ -67,6 +53,11 @@ const userSchema = new mongoose.Schema(
       min: [0, 'نسبة المكافأة يجب ألا تكون سالبة'],
       max: [100, 'نسبة المكافأة يجب ألا تتجاوز 100%'],
     },
+    mealAllowance: {
+      type: Number,
+      default: 500,
+      min: [0, 'بدل الوجبة يجب ألا يكون سالبًا'],
+    },
     medicalInsurance: {
       type: Number,
       default: 0,
@@ -76,6 +67,11 @@ const userSchema = new mongoose.Schema(
       type: Number,
       default: 0,
       min: [0, 'التأمين الاجتماعي يجب ألا يكون سالبًا'],
+    },
+    eidBonus: {
+      type: Number,
+      default: 0,
+      min: [0, 'عيدية العيد يجب ألا تكون سالبة'],
     },
     workDaysPerWeek: {
       type: Number,
@@ -91,10 +87,30 @@ const userSchema = new mongoose.Schema(
       default: 21,
       min: [0, 'رصيد الإجازة السنوية يجب ألا يكون سالبًا'],
     },
+    totalAnnualLeave: {
+      type: Number,
+      default: 0,
+      min: [0, 'إجمالي أيام الإجازة السنوية يجب ألا يكون سالبًا'],
+    },
     monthlyLateAllowance: {
       type: Number,
       default: 120,
       min: [0, 'رصيد السماح الشهري يجب ألا يكون سالبًا'],
+    },
+    penaltiesValue: {
+      type: Number,
+      default: 0,
+      min: [0, 'قيمة الجزاءات يجب ألا تكون سالبة'],
+    },
+    violationsInstallment: {
+      type: Number,
+      default: 0,
+      min: [0, 'قسط المخالفات يجب ألا يكون سالبًا'],
+    },
+    totalViolationsValue: {
+      type: Number,
+      default: 0,
+      min: [0, 'إجمالي قيمة المخالفات يجب ألا تكون سالبة'],
     },
     lastResetDate: {
       type: Date,
@@ -123,11 +139,6 @@ const userSchema = new mongoose.Schema(
 
 // إضافة فهرس على الحقل code لتحسين أداء البحث
 userSchema.index({ code: 1 });
-
-// حقل افتراضي لحساب الراتب الصافي
-userSchema.virtual('netSalary').get(function () {
-  return this.baseSalary - this.medicalInsurance - this.socialInsurance;
-});
 
 // تشفير كلمة المرور قبل الحفظ
 userSchema.pre('save', async function (next) {

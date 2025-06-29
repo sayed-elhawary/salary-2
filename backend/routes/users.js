@@ -4,53 +4,123 @@ import User from '../models/User.js';
 
 const router = express.Router();
 
+// وسيط التحقق من الأدمن
+const authMiddleware = (req, res, next) => {
+  const token = req.headers.authorization?.split(' ')[1];
+  if (!token) {
+    console.error('No token provided in request');
+    return res.status(401).json({ message: 'غير مصرح' });
+  }
+  try {
+    const decoded = jwt.verify(token, process.env.JWT_SECRET);
+    if (decoded.role !== 'admin') {
+      console.error('User is not admin:', decoded);
+      return res.status(403).json({ message: 'للأدمن فقط' });
+    }
+    req.user = decoded;
+    next();
+  } catch (error) {
+    console.error('Invalid token:', error.message);
+    return res.status(401).json({ message: 'توكن غير صالح' });
+  }
+};
+
 // إنشاء مستخدم جديد
-router.post('/', async (req, res) => {
+router.post('/', authMiddleware, async (req, res) => {
   try {
     const {
       code,
       fullName,
-      email,
-      phone,
       password,
       department,
       baseSalary,
       baseBonus,
       bonusPercentage,
+      mealAllowance,
       medicalInsurance,
       socialInsurance,
-      workDays,
+      workDaysPerWeek,
       status,
       createdBy,
+      totalAnnualLeave,
     } = req.body;
 
-    // التحقق من وجود كود أو إيميل مكرر
-    const existingUser = await User.findOne({ $or: [{ code }, { email: email || null }] });
+    // التحقق من وجود كود مكرر
+    const existingUser = await User.findOne({ code });
     if (existingUser) {
-      return res.status(400).json({ message: 'الكود أو البريد الإلكتروني مستخدم بالفعل' });
+      return res.status(400).json({ message: 'الكود مستخدم بالفعل' });
     }
 
     const user = new User({
       code,
       fullName,
-      email,
-      phone,
       password,
       department,
       baseSalary,
-      baseBonus,
-      bonusPercentage,
-      medicalInsurance,
-      socialInsurance,
-      workDays,
-      status,
+      baseBonus: baseBonus || 0,
+      bonusPercentage: bonusPercentage || 0,
+      mealAllowance: mealAllowance || 0,
+      medicalInsurance: medicalInsurance || 0,
+      socialInsurance: socialInsurance || 0,
+      workDaysPerWeek: workDaysPerWeek || 6,
+      status: status || 'active',
       createdBy,
+      totalAnnualLeave: totalAnnualLeave || 0,
+      role: 'employee',
     });
 
     await user.save();
     res.status(201).json({ user: { ...user.toObject(), netSalary: user.netSalary } });
   } catch (err) {
-    res.status(400).json({ message: err.message });
+    console.error('Error creating user:', err.message);
+    res.status(400).json({ message: 'خطأ في إنشاء المستخدم: ' + err.message });
+  }
+});
+
+// تحديث بيانات المستخدم
+router.put('/:code', authMiddleware, async (req, res) => {
+  try {
+    const {
+      code,
+      fullName,
+      department,
+      baseSalary,
+      baseBonus,
+      bonusPercentage,
+      mealAllowance,
+      medicalInsurance,
+      socialInsurance,
+      workDaysPerWeek,
+      status,
+      createdBy,
+      totalAnnualLeave,
+    } = req.body;
+
+    const user = await User.findOne({ code: req.params.code });
+    if (!user) {
+      return res.status(404).json({ message: 'المستخدم غير موجود' });
+    }
+
+    // تحديث الحقول المرسلة فقط
+    user.code = code || user.code;
+    user.fullName = fullName || user.fullName;
+    user.department = department || user.department;
+    user.baseSalary = baseSalary !== undefined ? baseSalary : user.baseSalary;
+    user.baseBonus = baseBonus !== undefined ? baseBonus : user.baseBonus;
+    user.bonusPercentage = bonusPercentage !== undefined ? bonusPercentage : user.bonusPercentage;
+    user.mealAllowance = mealAllowance !== undefined ? mealAllowance : user.mealAllowance;
+    user.medicalInsurance = medicalInsurance !== undefined ? medicalInsurance : user.medicalInsurance;
+    user.socialInsurance = socialInsurance !== undefined ? socialInsurance : user.socialInsurance;
+    user.workDaysPerWeek = workDaysPerWeek !== undefined ? workDaysPerWeek : user.workDaysPerWeek;
+    user.status = status || user.status;
+    user.createdBy = createdBy || user.createdBy;
+    user.totalAnnualLeave = totalAnnualLeave !== undefined ? totalAnnualLeave : user.totalAnnualLeave;
+
+    await user.save();
+    res.json({ message: 'تم تحديث المستخدم بنجاح', user: { ...user.toObject(), netSalary: user.netSalary } });
+  } catch (error) {
+    console.error('Error updating user:', error.message);
+    res.status(500).json({ message: 'خطأ في تحديث المستخدم: ' + error.message });
   }
 });
 
@@ -66,6 +136,7 @@ router.get('/me', async (req, res) => {
 
     res.json({ user: { ...user.toObject(), netSalary: user.netSalary } });
   } catch (err) {
+    console.error('Error fetching user:', err.message);
     res.status(401).json({ message: 'التوكن غير صالح' });
   }
 });
@@ -89,8 +160,10 @@ router.post('/login', async (req, res) => {
     });
     res.json({ token, user: { ...user.toObject(), netSalary: user.netSalary } });
   } catch (err) {
+    console.error('Error logging in:', err.message);
     res.status(500).json({ message: 'خطأ في الخادم' });
   }
 });
 
 export default router;
+
