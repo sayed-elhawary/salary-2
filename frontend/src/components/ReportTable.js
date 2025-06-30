@@ -101,9 +101,9 @@ const ReportTable = ({ reports, onEdit }) => {
                   whileHover={{ backgroundColor: '#f1fafb' }}
                   transition={{ duration: 0.2 }}
                   className={
-                    report.absence === 'نعم' ? 'bg-red-50' : 
-                    report.isSingleFingerprint === 'نعم' ? 'bg-yellow-50' : 
-                    report.annualLeave === 'نعم' ? 'bg-green-50' : 
+                    report.absence === 'نعم' ? 'bg-red-50' :
+                    report.isSingleFingerprint === 'نعم' ? 'bg-yellow-50' :
+                    report.annualLeave === 'نعم' ? 'bg-green-50' :
                     report.medicalLeave === 'نعم' ? 'bg-blue-50' : ''
                   }
                 >
