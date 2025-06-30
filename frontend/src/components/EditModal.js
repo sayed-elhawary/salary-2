@@ -163,4 +163,3 @@ const EditModal = ({ report, isOpen, onClose, onUpdate }) => {
 };
 
 export default EditModal;
-
