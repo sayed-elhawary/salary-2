@@ -54,23 +54,30 @@ const UploadFingerprint = () => {
     console.log(`Filtered reports: ${filtered.length}, Absence days shown: ${showAbsenceDays}, Single fingerprints shown: ${showSingleFingerprint}`);
   }, [reports, showSingleFingerprint, showAbsenceDays]);
 
+  const isWeeklyLeaveDay = (date, workDaysPerWeek) => {
+    const dayOfWeek = DateTime.fromJSDate(date, { zone: 'Africa/Cairo' }).weekday;
+    return (workDaysPerWeek === 5 && (dayOfWeek === 5 || dayOfWeek === 6)) ||
+           (workDaysPerWeek === 6 && dayOfWeek === 5);
+  };
+
   const calculateTotals = () => {
     const totals = filteredReports.reduce(
       (acc, report) => {
-        const isWorkDay = report.absence === 'لا' && 
-                         report.weeklyLeaveDays === 0 && 
-                         report.annualLeave === 'لا' && 
+        const isWeeklyLeave = isWeeklyLeaveDay(new Date(report.date), report.workDaysPerWeek || 5);
+        const isWorkDay = !isWeeklyLeave &&
+                         report.absence === 'لا' &&
+                         report.annualLeave === 'لا' &&
                          report.medicalLeave === 'لا';
         const isAbsenceDay = report.absence === 'نعم';
 
         acc.totalWorkHours += report.workHours || 0;
         acc.totalWorkDays += isWorkDay ? 1 : 0;
         acc.totalAbsenceDays += isAbsenceDay ? 1 : 0;
-        acc.totalDeductions += (report.lateDeduction || 0) + 
-                              (report.earlyLeaveDeduction || 0) + 
+        acc.totalDeductions += (report.lateDeduction || 0) +
+                              (report.earlyLeaveDeduction || 0) +
                               (report.medicalLeaveDeduction || 0);
         acc.totalOvertime += report.overtime || 0;
-        acc.totalWeeklyLeaveDays += report.weeklyLeaveDays || 0;
+        acc.totalWeeklyLeaveDays += isWeeklyLeave ? 1 : 0;
         acc.totalAnnualLeaveDays += report.annualLeave === 'نعم' ? 1 : 0;
         acc.totalMedicalLeaveDays += report.medicalLeave === 'نعم' ? 1 : 0;
         acc.annualLeaveBalance = report.annualLeaveBalance || 21;
@@ -144,7 +151,64 @@ const UploadFingerprint = () => {
           headers: { Authorization: `Bearer ${localStorage.getItem('token')}` },
         }
       );
-      setReports(res.data.reports);
+      let reports = res.data.reports;
+      const startDate = DateTime.fromISO(dateFrom, { zone: 'Africa/Cairo' });
+      const endDate = DateTime.fromISO(dateTo, { zone: 'Africa/Cairo' });
+
+      if (startDate.isValid && endDate.isValid && searchCode) {
+        const user = await axios.get(
+          `${process.env.REACT_APP_API_URL}/api/users/${searchCode}`,
+          { headers: { Authorization: `Bearer ${localStorage.getItem('token')}` } }
+        ).then(res => res.data.user).catch(() => null);
+
+        const workDaysPerWeek = user?.workDaysPerWeek || 5;
+        let currentDate = startDate;
+        const allReports = [];
+
+        while (currentDate <= endDate) {
+          const dateStr = currentDate.toISODate();
+          const existingReport = reports.find(
+            r => r.code === searchCode && DateTime.fromISO(r.date).toISODate() === dateStr
+          );
+
+          if (!existingReport) {
+            const isWeeklyLeave = isWeeklyLeaveDay(currentDate.toJSDate(), workDaysPerWeek);
+            const report = {
+              code: searchCode,
+              date: dateStr,
+              checkIn: null,
+              checkOut: null,
+              workHours: 0,
+              overtime: 0,
+              lateMinutes: 0,
+              lateDeduction: 0,
+              earlyLeaveDeduction: 0,
+              absence: isWeeklyLeave ? 'لا' : 'نعم',
+              annualLeave: 'لا',
+              medicalLeave: 'لا',
+              medicalLeaveDeduction: 0,
+              isSingleFingerprint: '',
+              workDaysPerWeek,
+              weeklyLeaveDays: isWeeklyLeave ? 1 : 0,
+              employeeName: user?.fullName || 'غير معروف',
+              monthlyLateAllowance: user?.monthlyLateAllowance || 120,
+              totalAnnualLeave: user?.totalAnnualLeave || 0,
+              annualLeaveBalance: user?.annualLeaveBalance || 21,
+            };
+            allReports.push(report);
+          } else {
+            allReports.push({
+              ...existingReport,
+              workHours: (existingReport.checkIn || existingReport.checkOut) ? 8 : 0, // البصمة الفردية تُحسب 8 ساعات
+              absence: (existingReport.checkIn || existingReport.checkOut) ? 'لا' : existingReport.absence,
+            });
+          }
+          currentDate = currentDate.plus({ days: 1 });
+        }
+        reports = allReports.sort((a, b) => new Date(a.date) - new Date(b.date));
+      }
+
+      setReports(reports);
     } catch (err) {
       console.error('Error searching reports:', err.response?.data?.error || err.message);
       alert(`خطأ أثناء البحث: ${err.response?.data?.error || err.message}`);
@@ -689,17 +753,46 @@ const UploadFingerprint = () => {
           >
             <h2 className="text-xl font-semibold text-gray-700 mb-4 text-right">التقارير</h2>
             <ReportTable reports={filteredReports} onEdit={handleEditReport} />
-            <div className="mt-4 text-right">
-              <h3 className="text-lg font-semibold text-gray-700 mb-2">إجماليات الفترة</h3>
-              <p>إجمالي ساعات العمل: {totals.totalWorkHours} ساعة</p>
-              <p>إجمالي أيام العمل: {totals.totalWorkDays} يوم</p>
-              <p>إجمالي أيام الغياب: {totals.totalAbsenceDays} يوم</p>
-              <p>إجمالي الخصومات: {totals.totalDeductions} يوم</p>
-              <p>إجمالي الساعات الإضافية: {totals.totalOvertime} ساعة</p>
-              <p>إجمالي أيام الإجازة الأسبوعية: {totals.totalWeeklyLeaveDays} يوم</p>
-              <p>إجمالي أيام الإجازة السنوية (الفترة): {totals.totalAnnualLeaveDays} يوم</p>
-              <p>إجمالي أيام الإجازة الطبية: {totals.totalMedicalLeaveDays} يوم</p>
-              <p>رصيد الإجازات السنوية: {totals.annualLeaveBalance} يوم</p>
+            <div className="mt-6 text-right">
+              <h3 className="text-lg font-semibold text-gray-800 mb-4">إجماليات الفترة</h3>
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 p-4 bg-gray-50 rounded-lg shadow-inner">
+                <div className="bg-blue-100 p-4 rounded-lg text-right">
+                  <p className="text-sm font-medium text-gray-600">إجمالي ساعات العمل</p>
+                  <p className="text-lg font-bold text-blue-700">{totals.totalWorkHours} ساعة</p>
+                </div>
+                <div className="bg-green-100 p-4 rounded-lg text-right">
+                  <p className="text-sm font-medium text-gray-600">إجمالي أيام العمل</p>
+                  <p className="text-lg font-bold text-green-700">{totals.totalWorkDays} يوم</p>
+                </div>
+                <div className="bg-red-100 p-4 rounded-lg text-right">
+                  <p className="text-sm font-medium text-gray-600">إجمالي أيام الغياب</p>
+                  <p className="text-lg font-bold text-red-700">{totals.totalAbsenceDays} يوم</p>
+                </div>
+                <div className="bg-yellow-100 p-4 rounded-lg text-right">
+                  <p className="text-sm font-medium text-gray-600">إجمالي الخصومات</p>
+                  <p className="text-lg font-bold text-yellow-700">{totals.totalDeductions} يوم</p>
+                </div>
+                <div className="bg-purple-100 p-4 rounded-lg text-right">
+                  <p className="text-sm font-medium text-gray-600">إجمالي الساعات الإضافية</p>
+                  <p className="text-lg font-bold text-purple-700">{totals.totalOvertime} ساعة</p>
+                </div>
+                <div className="bg-indigo-100 p-4 rounded-lg text-right">
+                  <p className="text-sm font-medium text-gray-600">إجمالي أيام الإجازة الأسبوعية</p>
+                  <p className="text-lg font-bold text-indigo-700">{totals.totalWeeklyLeaveDays} يوم</p>
+                </div>
+                <div className="bg-teal-100 p-4 rounded-lg text-right">
+                  <p className="text-sm font-medium text-gray-600">إجمالي أيام الإجازة السنوية (الفترة)</p>
+                  <p className="text-lg font-bold text-teal-700">{totals.totalAnnualLeaveDays} يوم</p>
+                </div>
+                <div className="bg-pink-100 p-4 rounded-lg text-right">
+                  <p className="text-sm font-medium text-gray-600">إجمالي أيام الإجازة الطبية</p>
+                  <p className="text-lg font-bold text-pink-700">{totals.totalMedicalLeaveDays} يوم</p>
+                </div>
+                <div className="bg-gray-100 p-4 rounded-lg text-right">
+                  <p className="text-sm font-medium text-gray-600">رصيد الإجازات السنوية</p>
+                  <p className="text-lg font-bold text-gray-700">{totals.annualLeaveBalance} يوم</p>
+                </div>
+              </div>
             </div>
           </motion.div>
         )}
