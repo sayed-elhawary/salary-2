@@ -77,6 +77,8 @@ const isWeeklyLeaveDay = (date, workDaysPerWeek) => {
 };
 
 fingerprintSchema.methods.calculateAttendance = async function () {
+  console.log(`Calculating attendance for ${this.code} on ${DateTime.fromJSDate(this.date).toISODate()}`);
+
   if (this.medicalLeave) {
     this.workHours = 0;
     this.overtime = 0;
@@ -87,6 +89,7 @@ fingerprintSchema.methods.calculateAttendance = async function () {
     this.annualLeave = false;
     this.isSingleFingerprint = false;
     this.medicalLeaveDeduction = 0.25;
+    console.log(`Medical leave applied for ${this.code}: medicalLeaveDeduction=0.25`);
     return;
   }
 
@@ -99,6 +102,7 @@ fingerprintSchema.methods.calculateAttendance = async function () {
     this.absence = false;
     this.isSingleFingerprint = false;
     this.medicalLeaveDeduction = 0;
+    console.log(`Annual leave applied for ${this.code}: no deductions`);
     return;
   }
 
@@ -111,40 +115,69 @@ fingerprintSchema.methods.calculateAttendance = async function () {
     this.absence = false;
     this.isSingleFingerprint = false;
     this.medicalLeaveDeduction = 0;
+    console.log(`Weekly leave day for ${this.code}: no deductions`);
     return;
   }
 
-  if (this.checkIn || this.checkOut) {
-    this.isSingleFingerprint = !(this.checkIn && this.checkOut);
-    if (this.checkIn && this.checkOut) {
-      const checkIn = DateTime.fromJSDate(this.checkIn, { zone: 'Africa/Cairo' });
-      const checkOut = DateTime.fromJSDate(this.checkOut, { zone: 'Africa/Cairo' });
-      if (!checkIn.isValid || !checkOut.isValid) {
-        this.workHours = 0;
-        this.overtime = 0;
-        this.medicalLeaveDeduction = 0;
-        this.absence = false;
-        return;
-      }
+  if (!this.checkIn && !this.checkOut) {
+    this.workHours = 0;
+    this.overtime = 0;
+    this.lateMinutes = 0;
+    this.lateDeduction = 0;
+    this.earlyLeaveDeduction = this.absence ? 1 : 0;
+    this.medicalLeaveDeduction = 0;
+    this.isSingleFingerprint = false;
+    this.absence = true;
+    console.log(`Absence recorded for ${this.code}: earlyLeaveDeduction=${this.earlyLeaveDeduction}`);
+    return;
+  }
 
-      const diffMs = checkOut.toMillis() - checkIn.toMillis();
-      const hours = diffMs / (1000 * 60 * 60);
-      this.workHours = Math.max(Math.min(hours, 8), 0);
-      this.overtime = hours > 8 ? hours - 8 : 0;
-      this.medicalLeaveDeduction = 0;
-    } else {
-      this.workHours = 0; // البصمة الفردية لا تُحسب ساعات عمل حتى إضافة البصمة الثانية
+  this.isSingleFingerprint = !(this.checkIn && this.checkOut);
+  if (this.checkIn && this.checkOut) {
+    const checkIn = DateTime.fromJSDate(this.checkIn, { zone: 'Africa/Cairo' });
+    const checkOut = DateTime.fromJSDate(this.checkOut, { zone: 'Africa/Cairo' });
+    if (!checkIn.isValid || !checkOut.isValid) {
+      this.workHours = 0;
       this.overtime = 0;
+      this.lateMinutes = 0;
+      this.lateDeduction = 0;
+      this.earlyLeaveDeduction = 0;
       this.medicalLeaveDeduction = 0;
       this.absence = false;
+      console.warn(`Invalid checkIn or checkOut time for ${this.code}`);
+      return;
     }
+
+    const diffMs = checkOut.toMillis() - checkIn.toMillis();
+    const hours = diffMs / (1000 * 60 * 60);
+    this.workHours = Math.max(Math.min(hours, 8), 0);
+    this.overtime = hours > 8 ? hours - 8 : 0;
+    this.medicalLeaveDeduction = 0;
+    this.absence = false;
+    console.log(`Attendance calculated for ${this.code}: workHours=${this.workHours}, overtime=${this.overtime}`);
   } else {
     this.workHours = 0;
     this.overtime = 0;
     this.medicalLeaveDeduction = 0;
-    this.isSingleFingerprint = false;
-    this.absence = true;
+    this.absence = false;
+    console.log(`Single fingerprint recorded for ${this.code}: no work hours`);
   }
 };
 
-export default mongoose.model('Fingerprint', fingerprintSchema);
+fingerprintSchema.pre('save', function (next) {
+  if (this.isModified('absence')) {
+    console.log(`Absence changed for ${this.code} on ${DateTime.fromJSDate(this.date).toISODate()}: ${this.absence}`);
+  }
+  if (this.isModified('annualLeave')) {
+    console.log(`Annual leave changed for ${this.code} on ${DateTime.fromJSDate(this.date).toISODate()}: ${this.annualLeave}`);
+  }
+  if (this.isModified('earlyLeaveDeduction')) {
+    console.log(`Early leave deduction changed for ${this.code} on ${DateTime.fromJSDate(this.date).toISODate()}: ${this.earlyLeaveDeduction}`);
+  }
+  next();
+});
+
+// التحقق من وجود النموذج قبل تعريفه
+const Fingerprint = mongoose.models.Fingerprint || mongoose.model('Fingerprint', fingerprintSchema);
+
+export default Fingerprint;
