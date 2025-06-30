@@ -344,7 +344,6 @@ router.get('/', authMiddleware, async (req, res) => {
               }
             }
           } else {
-            // تحديث السجل إذا كان يحتوي على بصمة فردية أو لا يحتوي على بصمات
             await existingReport.calculateAttendance();
             await handleLateDeduction(existingReport);
             await handleEarlyLeaveDeduction(existingReport);
@@ -690,8 +689,9 @@ router.get('/salary-report', authMiddleware, async (req, res) => {
       };
 
       console.log(`Salary report for ${user.code}:`, {
-        lateDeductionDays: salaryReport.lateDeductionDays,
-        medicalLeaveDeductionDays: salaryReport.medicalLeaveDeductionDays,
+        violationsInstallment: user.violationsInstallment,
+        totalAbsenceDays: totals.totalAbsenceDays,
+        totalAnnualLeaveDays: totals.totalAnnualLeaveDays,
         deductionsValue: salaryReport.deductionsValue,
         netSalary: salaryReport.netSalary,
       });
@@ -755,6 +755,7 @@ router.put('/:id', authMiddleware, async (req, res) => {
     }
 
     const { code, date, checkIn, checkOut, absence, annualLeave, medicalLeave } = req.body;
+    console.log('Received update request for fingerprint:', { code, date, annualLeave, absence });
     const dateDt = DateTime.fromISO(date, { zone: 'Africa/Cairo' });
     if (!dateDt.isValid) {
       return res.status(400).json({ error: 'تاريخ السجل غير صالح' });
@@ -812,6 +813,7 @@ router.put('/:id', authMiddleware, async (req, res) => {
         user.totalAnnualLeave = (user.totalAnnualLeave || 0) + 1;
         user.annualLeaveBalance -= 1;
         await user.save();
+        console.log(`Updated annual leave for user ${user.code}: totalAnnualLeave=${user.totalAnnualLeave}, annualLeaveBalance=${user.annualLeaveBalance}`);
       } else {
         return res.status(400).json({ error: 'رصيد الإجازات السنوية غير كافٍ' });
       }
@@ -820,6 +822,7 @@ router.put('/:id', authMiddleware, async (req, res) => {
         user.totalAnnualLeave = Math.max((user.totalAnnualLeave || 0) - 1, 0);
         user.annualLeaveBalance += 1;
         await user.save();
+        console.log(`Reverted annual leave for user ${user.code}: totalAnnualLeave=${user.totalAnnualLeave}, annualLeaveBalance=${user.annualLeaveBalance}`);
       }
     }
 
