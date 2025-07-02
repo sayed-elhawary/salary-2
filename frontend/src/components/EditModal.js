@@ -9,6 +9,8 @@ const EditModal = ({ report, isOpen, onClose, onUpdate }) => {
   const [absence, setAbsence] = useState(false);
   const [annualLeave, setAnnualLeave] = useState(false);
   const [medicalLeave, setMedicalLeave] = useState(false);
+  const [officialLeave, setOfficialLeave] = useState(false);
+  const [leaveCompensation, setLeaveCompensation] = useState(false);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
 
@@ -19,11 +21,23 @@ const EditModal = ({ report, isOpen, onClose, onUpdate }) => {
       setAbsence(report.absence === 'نعم');
       setAnnualLeave(report.annualLeave === 'نعم');
       setMedicalLeave(report.medicalLeave === 'نعم');
+      setOfficialLeave(report.officialLeave === 'نعم');
+      setLeaveCompensation(report.leaveCompensation === 'نعم');
       setError('');
     }
   }, [report]);
 
   if (!isOpen || !report) return null;
+
+  const handleCheckboxChange = (setter, value) => {
+    // Reset all other checkboxes to false when one is checked
+    setAbsence(false);
+    setAnnualLeave(false);
+    setMedicalLeave(false);
+    setOfficialLeave(false);
+    setLeaveCompensation(false);
+    setter(value); // Set the selected checkbox to true
+  };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -37,8 +51,8 @@ const EditModal = ({ report, isOpen, onClose, onUpdate }) => {
       return;
     }
 
-    if ([absence, annualLeave, medicalLeave].filter(Boolean).length > 1) {
-      setError('لا يمكن تحديد أكثر من حالة واحدة (غياب، إجازة سنوية، إجازة طبية) معًا');
+    if ([absence, annualLeave, medicalLeave, officialLeave, leaveCompensation].filter(Boolean).length > 1) {
+      setError('لا يمكن تحديد أكثر من حالة واحدة (غياب، إجازة سنوية، إجازة طبية، إجازة رسمية، بدل إجازة) معًا');
       setLoading(false);
       return;
     }
@@ -59,6 +73,8 @@ const EditModal = ({ report, isOpen, onClose, onUpdate }) => {
           absence,
           annualLeave,
           medicalLeave,
+          officialLeave,
+          leaveCompensation,
         },
         {
           headers: { Authorization: `Bearer ${token}` },
@@ -147,7 +163,7 @@ const EditModal = ({ report, isOpen, onClose, onUpdate }) => {
             <input
               type="checkbox"
               checked={absence}
-              onChange={(e) => setAbsence(e.target.checked)}
+              onChange={(e) => handleCheckboxChange(setAbsence, e.target.checked)}
               className="mr-2"
               disabled={loading}
             />
@@ -158,7 +174,7 @@ const EditModal = ({ report, isOpen, onClose, onUpdate }) => {
             <input
               type="checkbox"
               checked={annualLeave}
-              onChange={(e) => setAnnualLeave(e.target.checked)}
+              onChange={(e) => handleCheckboxChange(setAnnualLeave, e.target.checked)}
               className="mr-2"
               disabled={loading}
             />
@@ -169,7 +185,29 @@ const EditModal = ({ report, isOpen, onClose, onUpdate }) => {
             <input
               type="checkbox"
               checked={medicalLeave}
-              onChange={(e) => setMedicalLeave(e.target.checked)}
+              onChange={(e) => handleCheckboxChange(setMedicalLeave, e.target.checked)}
+              className="mr-2"
+              disabled={loading}
+            />
+            <span>نعم</span>
+          </div>
+          <div>
+            <label className="block text-gray-700 text-sm font-medium mb-2 text-right">إجازة رسمية</label>
+            <input
+              type="checkbox"
+              checked={officialLeave}
+              onChange={(e) => handleCheckboxChange(setOfficialLeave, e.target.checked)}
+              className="mr-2"
+              disabled={loading}
+            />
+            <span>نعم</span>
+          </div>
+          <div>
+            <label className="block text-gray-700 text-sm font-medium mb-2 text-right">بدل إجازة</label>
+            <input
+              type="checkbox"
+              checked={leaveCompensation}
+              onChange={(e) => handleCheckboxChange(setLeaveCompensation, e.target.checked)}
               className="mr-2"
               disabled={loading}
             />
