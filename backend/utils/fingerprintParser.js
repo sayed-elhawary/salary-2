@@ -142,6 +142,8 @@ export const parseFingerprintFile = async (file) => {
               absence: false,
               annualLeave: false,
               medicalLeave: false,
+              officialLeave: false,
+              leaveCompensation: false,
               date: filteredEntries[0].toJSDate(),
               workDaysPerWeek: user.workDaysPerWeek || 5,
             });
