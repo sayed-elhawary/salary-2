@@ -1,6 +1,7 @@
 import XLSX from 'xlsx';
 import { DateTime } from 'luxon';
 import Fingerprint from '../models/Fingerprint.js';
+import User from '../models/User.js';
 
 export const parseFingerprintFile = async (file) => {
   try {
@@ -84,6 +85,13 @@ export const parseFingerprintFile = async (file) => {
 
     for (const key in groupedByCodeAndDate) {
       try {
+        const [code, dateKey] = key.split('-');
+        const user = await User.findOne({ code });
+        if (!user) {
+          console.warn(`Skipping group ${key}: No user found for code ${code}`);
+          continue;
+        }
+
         const entries = groupedByCodeAndDate[key].sort((a, b) => a.dateTime.toMillis() - b.dateTime.toMillis());
         let checkIn = null;
         let checkOut = null;
@@ -112,7 +120,6 @@ export const parseFingerprintFile = async (file) => {
         console.log(`Processing group ${key}: checkIn=${checkIn}, checkOut=${checkOut}`);
 
         if (checkIn || checkOut) {
-          const [code, dateKey] = key.split('-');
           const existingReport = await Fingerprint.findOne({
             code,
             date: {
@@ -122,8 +129,9 @@ export const parseFingerprintFile = async (file) => {
           });
 
           if (!existingReport) {
-            reports.push({
+            const report = new Fingerprint({
               code,
+              employeeName: user.fullName,
               checkIn,
               checkOut,
               workHours: 0,
@@ -132,9 +140,15 @@ export const parseFingerprintFile = async (file) => {
               lateDeduction: 0,
               earlyLeaveDeduction: 0,
               absence: false,
+              annualLeave: false,
+              medicalLeave: false,
               date: filteredEntries[0].toJSDate(),
-              workDaysPerWeek: 5, // سيتم تحديثه لاحقًا
+              workDaysPerWeek: user.workDaysPerWeek || 5,
             });
+
+            await report.calculateAttendance();
+            reports.push(report);
+            console.log(`Created new report for code ${code} on ${dateKey}: employeeName=${user.fullName}, workDaysPerWeek=${report.workDaysPerWeek}`);
           } else {
             console.log(`Skipping duplicate report for code ${code} on ${dateKey}`);
           }
