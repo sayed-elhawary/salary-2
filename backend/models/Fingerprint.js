@@ -1,10 +1,16 @@
 import mongoose from 'mongoose';
 import { DateTime } from 'luxon';
+import User from './User.js';
 
 const fingerprintSchema = new mongoose.Schema({
   code: {
     type: String,
     required: [true, 'كود الموظف مطلوب'],
+    trim: true,
+  },
+  employeeName: {
+    type: String,
+    required: [true, 'اسم الموظف مطلوب'],
     trim: true,
   },
   date: {
@@ -66,6 +72,8 @@ const fingerprintSchema = new mongoose.Schema({
   },
 }, {
   timestamps: true,
+  toJSON: { virtuals: true },
+  toObject: { virtuals: true },
 });
 
 fingerprintSchema.index({ code: 1, date: 1 }, { unique: true });
@@ -76,8 +84,38 @@ const isWeeklyLeaveDay = (date, workDaysPerWeek) => {
          (workDaysPerWeek === 6 && dayOfWeek === 5);
 };
 
+fingerprintSchema.pre('save', async function (next) {
+  try {
+    if (this.isNew || this.isModified('code')) {
+      const user = await User.findOne({ code: this.code });
+      if (!user) {
+        throw new Error(`لا يوجد مستخدم بكود ${this.code}`);
+      }
+      this.employeeName = user.fullName;
+      console.log(`Updated employeeName for fingerprint ${this.code} on ${DateTime.fromJSDate(this.date).toISODate()}: ${this.employeeName}`);
+    }
+    if (this.isModified('absence')) {
+      console.log(`Absence changed for ${this.code} on ${DateTime.fromJSDate(this.date).toISODate()}: ${this.absence}`);
+    }
+    if (this.isModified('annualLeave')) {
+      console.log(`Annual leave changed for ${this.code} on ${DateTime.fromJSDate(this.date).toISODate()}: ${this.annualLeave}`);
+    }
+    if (this.isModified('earlyLeaveDeduction')) {
+      console.log(`Early leave deduction changed for ${this.code} on ${DateTime.fromJSDate(this.date).toISODate()}: ${this.earlyLeaveDeduction}`);
+    }
+    next();
+  } catch (err) {
+    console.error(`Error in pre-save middleware for ${this.code}:`, err.message);
+    next(err);
+  }
+});
+
 fingerprintSchema.methods.calculateAttendance = async function () {
   console.log(`Calculating attendance for ${this.code} on ${DateTime.fromJSDate(this.date).toISODate()}`);
+
+  if (!DateTime.fromJSDate(this.date, { zone: 'Africa/Cairo' }).isValid) {
+    throw new Error(`تاريخ غير صالح لـ ${this.code}`);
+  }
 
   if (this.medicalLeave) {
     this.workHours = 0;
@@ -164,20 +202,6 @@ fingerprintSchema.methods.calculateAttendance = async function () {
   }
 };
 
-fingerprintSchema.pre('save', function (next) {
-  if (this.isModified('absence')) {
-    console.log(`Absence changed for ${this.code} on ${DateTime.fromJSDate(this.date).toISODate()}: ${this.absence}`);
-  }
-  if (this.isModified('annualLeave')) {
-    console.log(`Annual leave changed for ${this.code} on ${DateTime.fromJSDate(this.date).toISODate()}: ${this.annualLeave}`);
-  }
-  if (this.isModified('earlyLeaveDeduction')) {
-    console.log(`Early leave deduction changed for ${this.code} on ${DateTime.fromJSDate(this.date).toISODate()}: ${this.earlyLeaveDeduction}`);
-  }
-  next();
-});
-
-// التحقق من وجود النموذج قبل تعريفه
 const Fingerprint = mongoose.models.Fingerprint || mongoose.model('Fingerprint', fingerprintSchema);
 
 export default Fingerprint;
