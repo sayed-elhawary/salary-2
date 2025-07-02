@@ -189,7 +189,12 @@ userSchema.virtual('netSalary').get(async function () {
 
     const totals = fingerprints.reduce(
       (acc, report) => {
-        const isWorkDay = !report.absence && !report.annualLeave && !report.medicalLeave && !isWeeklyLeaveDay(report.date, this.workDaysPerWeek);
+        const isWorkDay = !report.absence &&
+                          !report.annualLeave &&
+                          !report.medicalLeave &&
+                          !report.officialLeave &&
+                          !report.leaveCompensation &&
+                          !isWeeklyLeaveDay(report.date, this.workDaysPerWeek);
         acc.totalWorkHours += report.workHours || 0;
         acc.totalWorkDays += isWorkDay ? 1 : 0;
         acc.totalAbsenceDays += report.absence ? 1 : 0;
@@ -200,6 +205,8 @@ userSchema.virtual('netSalary').get(async function () {
         acc.totalWeeklyLeaveDays += isWeeklyLeaveDay(report.date, this.workDaysPerWeek) ? 1 : 0;
         acc.totalAnnualLeaveDays += report.annualLeave ? 1 : 0;
         acc.totalMedicalLeaveDays += report.medicalLeave ? 1 : 0;
+        acc.totalOfficialLeaveDays += report.officialLeave ? 1 : 0;
+        acc.totalLeaveCompensationDays += report.leaveCompensation ? 1 : 0;
         return acc;
       },
       {
@@ -213,6 +220,8 @@ userSchema.virtual('netSalary').get(async function () {
         totalWeeklyLeaveDays: 0,
         totalAnnualLeaveDays: 0,
         totalMedicalLeaveDays: 0,
+        totalOfficialLeaveDays: 0,
+        totalLeaveCompensationDays: 0,
       }
     );
 
@@ -220,7 +229,7 @@ userSchema.virtual('netSalary').get(async function () {
     const hourlyRate = dailySalary / 9;
     const overtimeValue = totals.totalOvertime * hourlyRate;
     const baseMealAllowance = this.mealAllowance;
-    const mealAllowance = baseMealAllowance - (totals.totalAbsenceDays + totals.totalAnnualLeaveDays + totals.totalMedicalLeaveDays) * 50;
+    const mealAllowance = baseMealAllowance - (totals.totalAbsenceDays + totals.totalAnnualLeaveDays + totals.totalMedicalLeaveDays + totals.totalOfficialLeaveDays) * 50;
     const bonus = this.baseBonus * (this.bonusPercentage / 100);
     const deductionsValue = (totals.totalAbsenceDays + totals.lateDeductionDays + totals.earlyLeaveDeductionDays + totals.medicalLeaveDeductionDays) * dailySalary + this.penaltiesValue + this.violationsInstallment;
 
