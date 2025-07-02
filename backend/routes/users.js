@@ -4,12 +4,11 @@ import User from '../models/User.js';
 
 const router = express.Router();
 
-// Middleware to verify admin
 const authMiddleware = (req, res, next) => {
   const token = req.headers.authorization?.split(' ')[1];
   if (!token) {
     console.error('No token provided in request');
-    return res.status(401).json({ message: 'غير مصرح' });
+    return res.status(401).json({ message: 'غير مصرح، يرجى تقديم توكن' });
   }
   try {
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
@@ -25,7 +24,6 @@ const authMiddleware = (req, res, next) => {
   }
 };
 
-// Create a new user
 router.post('/', authMiddleware, async (req, res) => {
   try {
     const {
@@ -49,7 +47,11 @@ router.post('/', authMiddleware, async (req, res) => {
       totalViolationsValue,
     } = req.body;
 
-    // Validate numeric fields
+    if (!code || !fullName || !password || !department || !baseSalary || !bonusPercentage) {
+      console.error('Missing required fields:', { code, fullName, password, department, baseSalary, bonusPercentage });
+      return res.status(400).json({ message: 'جميع الحقول المطلوبة يجب أن تكون موجودة' });
+    }
+
     const numericFields = {
       baseSalary,
       baseBonus,
@@ -72,7 +74,6 @@ router.post('/', authMiddleware, async (req, res) => {
       }
     }
 
-    // Check for duplicate code
     const existingUser = await User.findOne({ code });
     if (existingUser) {
       console.error(`User with code ${code} already exists`);
@@ -102,20 +103,19 @@ router.post('/', authMiddleware, async (req, res) => {
     });
 
     await user.save();
-    const netSalary = await user.netSalary; // Resolve netSalary Promise
+    const netSalaryData = await user.netSalary;
     console.log(`User created successfully: ${code}`, {
       violationsInstallment: user.violationsInstallment,
       baseSalary: user.baseSalary,
-      netSalary,
+      netSalary: netSalaryData.netSalary,
     });
-    res.status(201).json({ user: { ...user.toObject(), netSalary } });
+    res.status(201).json({ user: { ...user.toObject(), netSalary: netSalaryData.netSalary, employeeName: user.fullName } });
   } catch (err) {
     console.error('Error creating user:', err.message);
     res.status(400).json({ message: 'خطأ في إنشاء المستخدم: ' + err.message });
   }
 });
 
-// Update user data
 router.put('/:code', authMiddleware, async (req, res) => {
   try {
     console.log('Received update request for user:', req.params.code, 'Data:', req.body);
@@ -146,13 +146,11 @@ router.put('/:code', authMiddleware, async (req, res) => {
       return res.status(404).json({ message: 'المستخدم غير موجود' });
     }
 
-    // Prevent updating role to admin
     if (role && role !== 'user') {
       console.error('Attempt to set role to admin:', role);
       return res.status(403).json({ message: 'لا يمكن تعيين الرول إلى admin من هذه الواجهة' });
     }
 
-    // Validate numeric fields
     const numericFields = {
       baseSalary,
       baseBonus,
@@ -175,7 +173,6 @@ router.put('/:code', authMiddleware, async (req, res) => {
       }
     }
 
-    // Update only provided fields
     user.code = code || user.code;
     user.fullName = fullName || user.fullName;
     user.department = department || user.department;
@@ -195,21 +192,20 @@ router.put('/:code', authMiddleware, async (req, res) => {
     user.totalViolationsValue = totalViolationsValue !== undefined ? parseFloat(totalViolationsValue) : user.totalViolationsValue;
 
     await user.save();
-    const netSalary = await user.netSalary; // Resolve netSalary Promise
+    const netSalaryData = await user.netSalary;
     console.log('Updated user:', {
       code: user.code,
       violationsInstallment: user.violationsInstallment,
       baseSalary: user.baseSalary,
-      netSalary,
+      netSalary: netSalaryData.netSalary,
     });
-    res.json({ message: 'تم تحديث المستخدم بنجاح', user: { ...user.toObject(), netSalary } });
+    res.json({ message: 'تم تحديث المستخدم بنجاح', user: { ...user.toObject(), netSalary: netSalaryData.netSalary, employeeName: user.fullName } });
   } catch (error) {
     console.error('Error updating user:', error.message);
     res.status(500).json({ message: 'خطأ في تحديث المستخدم: ' + error.message });
   }
 });
 
-// Get current user data
 router.get('/me', async (req, res) => {
   try {
     const token = req.headers.authorization?.split(' ')[1];
@@ -225,18 +221,22 @@ router.get('/me', async (req, res) => {
       return res.status(404).json({ message: 'المستخدم غير موجود' });
     }
 
-    const netSalary = await user.netSalary; // Resolve netSalary Promise
-    res.json({ user: { ...user.toObject(), netSalary } });
+    const netSalaryData = await user.netSalary;
+    res.json({ user: { ...user.toObject(), netSalary: netSalaryData.netSalary, employeeName: user.fullName } });
   } catch (err) {
     console.error('Error fetching user:', err.message);
     res.status(401).json({ message: 'التوكن غير صالح' });
   }
 });
 
-// Login
 router.post('/login', async (req, res) => {
   try {
     const { code, password } = req.body;
+    if (!code || !password) {
+      console.error('Missing code or password');
+      return res.status(400).json({ message: 'كود الموظف وكلمة المرور مطلوبان' });
+    }
+
     const user = await User.findOne({ code });
     if (!user) {
       console.error(`User with code ${code} not found`);
@@ -257,11 +257,11 @@ router.post('/login', async (req, res) => {
     const token = jwt.sign({ code: user.code, role: user.role }, process.env.JWT_SECRET, {
       expiresIn: '7d',
     });
-    const netSalary = await user.netSalary; // Resolve netSalary Promise
-    res.json({ token, user: { ...user.toObject(), netSalary } });
+    const netSalaryData = await user.netSalary;
+    res.json({ token, user: { ...user.toObject(), netSalary: netSalaryData.netSalary, employeeName: user.fullName } });
   } catch (err) {
     console.error('Error logging in:', err.message);
-    res.status(500).json({ message: 'خطأ في الخادم' });
+    res.status(500).json({ message: 'خطأ في الخادم: ' + err.message });
   }
 });
 
