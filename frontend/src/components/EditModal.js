@@ -8,7 +8,9 @@ const EditModal = ({ report, isOpen, onClose, onUpdate }) => {
   const [checkOut, setCheckOut] = useState('');
   const [absence, setAbsence] = useState(false);
   const [annualLeave, setAnnualLeave] = useState(false);
+  const [medicalLeave, setMedicalLeave] = useState(false);
   const [error, setError] = useState('');
+  const [loading, setLoading] = useState(false);
 
   useEffect(() => {
     if (report) {
@@ -16,6 +18,7 @@ const EditModal = ({ report, isOpen, onClose, onUpdate }) => {
       setCheckOut(report.checkOut || '');
       setAbsence(report.absence === 'نعم');
       setAnnualLeave(report.annualLeave === 'نعم');
+      setMedicalLeave(report.medicalLeave === 'نعم');
       setError('');
     }
   }, [report]);
@@ -25,20 +28,27 @@ const EditModal = ({ report, isOpen, onClose, onUpdate }) => {
   const handleSubmit = async (e) => {
     e.preventDefault();
     setError('');
+    setLoading(true);
 
     const timeRegex = /^([0-1][0-9]|2[0-3]):[0-5][0-9]:[0-5][0-9]$/;
     if ((checkIn && !timeRegex.test(checkIn)) || (checkOut && !timeRegex.test(checkOut))) {
       setError('تنسيق الوقت غير صالح، يجب أن يكون HH:mm:ss');
+      setLoading(false);
       return;
     }
 
-    if (absence && annualLeave) {
-      setError('لا يمكن تحديد الغياب والإجازة السنوية معًا');
+    if ([absence, annualLeave, medicalLeave].filter(Boolean).length > 1) {
+      setError('لا يمكن تحديد أكثر من حالة واحدة (غياب، إجازة سنوية، إجازة طبية) معًا');
+      setLoading(false);
       return;
     }
 
     try {
       const token = localStorage.getItem('token');
+      if (!token) {
+        throw new Error('التوكن غير موجود، يرجى تسجيل الدخول');
+      }
+
       const response = await axios.put(
         `${process.env.REACT_APP_API_URL}/api/fingerprints/${report._id}`,
         {
@@ -48,16 +58,20 @@ const EditModal = ({ report, isOpen, onClose, onUpdate }) => {
           checkOut: checkOut || null,
           absence,
           annualLeave,
+          medicalLeave,
         },
         {
           headers: { Authorization: `Bearer ${token}` },
         }
       );
+
       onUpdate(response.data.report);
       onClose();
     } catch (err) {
       console.error('Error saving report:', err);
       setError(err.response?.data?.error || 'خطأ في حفظ التعديلات');
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -78,8 +92,8 @@ const EditModal = ({ report, isOpen, onClose, onUpdate }) => {
       >
         <h2 className="text-xl font-semibold text-gray-700 mb-4 text-right">تعديل السجل</h2>
         {error && <p className="text-red-500 text-right mb-4">{error}</p>}
-        <form onSubmit={handleSubmit}>
-          <div className="mb-4">
+        <form onSubmit={handleSubmit} className="space-y-4">
+          <div>
             <label className="block text-gray-700 text-sm font-medium mb-2 text-right">كود الموظف</label>
             <input
               type="text"
@@ -88,7 +102,16 @@ const EditModal = ({ report, isOpen, onClose, onUpdate }) => {
               className="w-full px-3 py-2 border rounded-lg bg-gray-100 text-right"
             />
           </div>
-          <div className="mb-4">
+          <div>
+            <label className="block text-gray-700 text-sm font-medium mb-2 text-right">اسم الموظف</label>
+            <input
+              type="text"
+              value={report.employeeName}
+              readOnly
+              className="w-full px-3 py-2 border rounded-lg bg-gray-100 text-right"
+            />
+          </div>
+          <div>
             <label className="block text-gray-700 text-sm font-medium mb-2 text-right">تاريخ الحضور</label>
             <input
               type="text"
@@ -97,7 +120,7 @@ const EditModal = ({ report, isOpen, onClose, onUpdate }) => {
               className="w-full px-3 py-2 border rounded-lg bg-gray-100 text-right"
             />
           </div>
-          <div className="mb-4">
+          <div>
             <label className="block text-gray-700 text-sm font-medium mb-2 text-right">توقيت الحضور</label>
             <input
               type="time"
@@ -105,9 +128,10 @@ const EditModal = ({ report, isOpen, onClose, onUpdate }) => {
               onChange={(e) => setCheckIn(e.target.value)}
               className="w-full px-3 py-2 border rounded-lg text-right"
               step="1"
+              disabled={loading}
             />
           </div>
-          <div className="mb-4">
+          <div>
             <label className="block text-gray-700 text-sm font-medium mb-2 text-right">توقيت الانصراف</label>
             <input
               type="time"
@@ -115,43 +139,59 @@ const EditModal = ({ report, isOpen, onClose, onUpdate }) => {
               onChange={(e) => setCheckOut(e.target.value)}
               className="w-full px-3 py-2 border rounded-lg text-right"
               step="1"
+              disabled={loading}
             />
           </div>
-          <div className="mb-4">
+          <div>
             <label className="block text-gray-700 text-sm font-medium mb-2 text-right">الغياب</label>
             <input
               type="checkbox"
               checked={absence}
               onChange={(e) => setAbsence(e.target.checked)}
               className="mr-2"
+              disabled={loading}
             />
             <span>نعم</span>
           </div>
-          <div className="mb-4">
+          <div>
             <label className="block text-gray-700 text-sm font-medium mb-2 text-right">إجازة سنوية</label>
             <input
               type="checkbox"
               checked={annualLeave}
               onChange={(e) => setAnnualLeave(e.target.checked)}
               className="mr-2"
+              disabled={loading}
+            />
+            <span>نعم</span>
+          </div>
+          <div>
+            <label className="block text-gray-700 text-sm font-medium mb-2 text-right">إجازة طبية</label>
+            <input
+              type="checkbox"
+              checked={medicalLeave}
+              onChange={(e) => setMedicalLeave(e.target.checked)}
+              className="mr-2"
+              disabled={loading}
             />
             <span>نعم</span>
           </div>
           <div className="flex justify-end gap-4">
             <motion.button
               type="submit"
-              whileHover={{ scale: 1.05 }}
-              whileTap={{ scale: 0.95 }}
-              className="bg-blue-700 text-white px-4 py-2 rounded-md hover:bg-blue-800"
+              disabled={loading}
+              whileHover={{ scale: loading ? 1 : 1.05 }}
+              whileTap={{ scale: loading ? 1 : 0.95 }}
+              className={`bg-blue-700 text-white px-4 py-2 rounded-md hover:bg-blue-800 ${loading ? 'opacity-50 cursor-not-allowed' : ''}`}
             >
-              حفظ
+              {loading ? 'جارٍ الحفظ...' : 'حفظ'}
             </motion.button>
             <motion.button
               type="button"
               onClick={onClose}
-              whileHover={{ scale: 1.05 }}
-              whileTap={{ scale: 0.95 }}
-              className="bg-gray-500 text-white px-4 py-2 rounded-md hover:bg-gray-600"
+              disabled={loading}
+              whileHover={{ scale: loading ? 1 : 1.05 }}
+              whileTap={{ scale: loading ? 1 : 0.95 }}
+              className={`bg-gray-500 text-white px-4 py-2 rounded-md hover:bg-gray-600 ${loading ? 'opacity-50 cursor-not-allowed' : ''}`}
             >
               إلغاء
             </motion.button>
