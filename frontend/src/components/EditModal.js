@@ -30,13 +30,12 @@ const EditModal = ({ report, isOpen, onClose, onUpdate }) => {
   if (!isOpen || !report) return null;
 
   const handleCheckboxChange = (setter, value) => {
-    // Reset all other checkboxes to false when one is checked
     setAbsence(false);
     setAnnualLeave(false);
     setMedicalLeave(false);
     setOfficialLeave(false);
     setLeaveCompensation(false);
-    setter(value); // Set the selected checkbox to true
+    setter(value);
   };
 
   const handleSubmit = async (e) => {
@@ -93,133 +92,143 @@ const EditModal = ({ report, isOpen, onClose, onUpdate }) => {
 
   return (
     <motion.div
-      className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50"
+      className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4"
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
       exit={{ opacity: 0 }}
       onClick={onClose}
     >
       <motion.div
-        className="bg-white p-6 rounded-xl shadow-lg w-full max-w-md"
-        initial={{ scale: 0.8 }}
-        animate={{ scale: 1 }}
-        exit={{ scale: 0.8 }}
+        className="bg-white p-4 sm:p-6 rounded-xl shadow-lg w-full max-w-lg"
+        initial={{ scale: 0.8, y: 50 }}
+        animate={{ scale: 1, y: 0 }}
+        exit={{ scale: 0.8, y: 50 }}
+        transition={{ type: 'spring', stiffness: 300, damping: 30 }}
         onClick={(e) => e.stopPropagation()}
       >
-        <h2 className="text-xl font-semibold text-gray-700 mb-4 text-right">تعديل السجل</h2>
-        {error && <p className="text-red-500 text-right mb-4">{error}</p>}
-        <form onSubmit={handleSubmit} className="space-y-4">
-          <div>
-            <label className="block text-gray-700 text-sm font-medium mb-2 text-right">كود الموظف</label>
-            <input
-              type="text"
-              value={report.code}
-              readOnly
-              className="w-full px-3 py-2 border rounded-lg bg-gray-100 text-right"
-            />
+        <h2 className="text-lg sm:text-xl font-semibold text-gray-700 mb-4 text-right">تعديل السجل</h2>
+        {error && (
+          <motion.p
+            initial={{ opacity: 0, y: -10 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="text-red-500 text-right mb-4 text-sm"
+          >
+            {error}
+          </motion.p>
+        )}
+        <form onSubmit={handleSubmit} className="space-y-3 sm:space-y-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
+            <div>
+              <label className="block text-gray-700 text-sm font-medium mb-1 text-right">كود الموظف</label>
+              <input
+                type="text"
+                value={report.code}
+                readOnly
+                className="w-full px-3 py-2 border rounded-lg bg-gray-100 text-right text-sm"
+              />
+            </div>
+            <div>
+              <label className="block text-gray-700 text-sm font-medium mb-1 text-right">اسم الموظف</label>
+              <input
+                type="text"
+                value={report.employeeName}
+                readOnly
+                className="w-full px-3 py-2 border rounded-lg bg-gray-100 text-right text-sm"
+              />
+            </div>
           </div>
           <div>
-            <label className="block text-gray-700 text-sm font-medium mb-2 text-right">اسم الموظف</label>
-            <input
-              type="text"
-              value={report.employeeName}
-              readOnly
-              className="w-full px-3 py-2 border rounded-lg bg-gray-100 text-right"
-            />
-          </div>
-          <div>
-            <label className="block text-gray-700 text-sm font-medium mb-2 text-right">تاريخ الحضور</label>
+            <label className="block text-gray-700 text-sm font-medium mb-1 text-right">تاريخ الحضور</label>
             <input
               type="text"
               value={report.date}
               readOnly
-              className="w-full px-3 py-2 border rounded-lg bg-gray-100 text-right"
+              className="w-full px-3 py-2 border rounded-lg bg-gray-100 text-right text-sm"
             />
           </div>
-          <div>
-            <label className="block text-gray-700 text-sm font-medium mb-2 text-right">توقيت الحضور</label>
-            <input
-              type="time"
-              value={checkIn}
-              onChange={(e) => setCheckIn(e.target.value)}
-              className="w-full px-3 py-2 border rounded-lg text-right"
-              step="1"
-              disabled={loading}
-            />
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
+            <div>
+              <label className="block text-gray-700 text-sm font-medium mb-1 text-right">توقيت الحضور</label>
+              <input
+                type="time"
+                value={checkIn}
+                onChange={(e) => setCheckIn(e.target.value)}
+                className="w-full px-3 py-2 border rounded-lg text-right text-sm"
+                step="1"
+                disabled={loading}
+              />
+            </div>
+            <div>
+              <label className="block text-gray-700 text-sm font-medium mb-1 text-right">توقيت الانصراف</label>
+              <input
+                type="time"
+                value={checkOut}
+                onChange={(e) => setCheckOut(e.target.value)}
+                className="w-full px-3 py-2 border rounded-lg text-right text-sm"
+                step="1"
+                disabled={loading}
+              />
+            </div>
           </div>
-          <div>
-            <label className="block text-gray-700 text-sm font-medium mb-2 text-right">توقيت الانصراف</label>
-            <input
-              type="time"
-              value={checkOut}
-              onChange={(e) => setCheckOut(e.target.value)}
-              className="w-full px-3 py-2 border rounded-lg text-right"
-              step="1"
-              disabled={loading}
-            />
+          <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 sm:gap-3">
+            <div className="flex items-center justify-end">
+              <label className="text-gray-700 text-sm font-medium mr-2">الغياب</label>
+              <input
+                type="checkbox"
+                checked={absence}
+                onChange={(e) => handleCheckboxChange(setAbsence, e.target.checked)}
+                className="h-4 w-4"
+                disabled={loading}
+              />
+            </div>
+            <div className="flex items-center justify-end">
+              <label className="text-gray-700 text-sm font-medium mr-2">إجازة سنوية</label>
+              <input
+                type="checkbox"
+                checked={annualLeave}
+                onChange={(e) => handleCheckboxChange(setAnnualLeave, e.target.checked)}
+                className="h-4 w-4"
+                disabled={loading}
+              />
+            </div>
+            <div className="flex items-center justify-end">
+              <label className="text-gray-700 text-sm font-medium mr-2">إجازة طبية</label>
+              <input
+                type="checkbox"
+                checked={medicalLeave}
+                onChange={(e) => handleCheckboxChange(setMedicalLeave, e.target.checked)}
+                className="h-4 w-4"
+                disabled={loading}
+              />
+            </div>
+            <div className="flex items-center justify-end">
+              <label className="text-gray-700 text-sm font-medium mr-2">إجازة رسمية</label>
+              <input
+                type="checkbox"
+                checked={officialLeave}
+                onChange={(e) => handleCheckboxChange(setOfficialLeave, e.target.checked)}
+                className="h-4 w-4"
+                disabled={loading}
+              />
+            </div>
+            <div className="flex items-center justify-end">
+              <label className="text-gray-700 text-sm font-medium mr-2">بدل إجازة</label>
+              <input
+                type="checkbox"
+                checked={leaveCompensation}
+                onChange={(e) => handleCheckboxChange(setLeaveCompensation, e.target.checked)}
+                className="h-4 w-4"
+                disabled={loading}
+              />
+            </div>
           </div>
-          <div>
-            <label className="block text-gray-700 text-sm font-medium mb-2 text-right">الغياب</label>
-            <input
-              type="checkbox"
-              checked={absence}
-              onChange={(e) => handleCheckboxChange(setAbsence, e.target.checked)}
-              className="mr-2"
-              disabled={loading}
-            />
-            <span>نعم</span>
-          </div>
-          <div>
-            <label className="block text-gray-700 text-sm font-medium mb-2 text-right">إجازة سنوية</label>
-            <input
-              type="checkbox"
-              checked={annualLeave}
-              onChange={(e) => handleCheckboxChange(setAnnualLeave, e.target.checked)}
-              className="mr-2"
-              disabled={loading}
-            />
-            <span>نعم</span>
-          </div>
-          <div>
-            <label className="block text-gray-700 text-sm font-medium mb-2 text-right">إجازة طبية</label>
-            <input
-              type="checkbox"
-              checked={medicalLeave}
-              onChange={(e) => handleCheckboxChange(setMedicalLeave, e.target.checked)}
-              className="mr-2"
-              disabled={loading}
-            />
-            <span>نعم</span>
-          </div>
-          <div>
-            <label className="block text-gray-700 text-sm font-medium mb-2 text-right">إجازة رسمية</label>
-            <input
-              type="checkbox"
-              checked={officialLeave}
-              onChange={(e) => handleCheckboxChange(setOfficialLeave, e.target.checked)}
-              className="mr-2"
-              disabled={loading}
-            />
-            <span>نعم</span>
-          </div>
-          <div>
-            <label className="block text-gray-700 text-sm font-medium mb-2 text-right">بدل إجازة</label>
-            <input
-              type="checkbox"
-              checked={leaveCompensation}
-              onChange={(e) => handleCheckboxChange(setLeaveCompensation, e.target.checked)}
-              className="mr-2"
-              disabled={loading}
-            />
-            <span>نعم</span>
-          </div>
-          <div className="flex justify-end gap-4">
+          <div className="flex flex-wrap justify-end gap-2 sm:gap-4">
             <motion.button
               type="submit"
               disabled={loading}
               whileHover={{ scale: loading ? 1 : 1.05 }}
               whileTap={{ scale: loading ? 1 : 0.95 }}
-              className={`bg-blue-700 text-white px-4 py-2 rounded-md hover:bg-blue-800 ${loading ? 'opacity-50 cursor-not-allowed' : ''}`}
+              className={`w-full sm:w-auto bg-blue-700 text-white px-4 py-2 rounded-md hover:bg-blue-800 transition-colors duration-300 text-sm sm:text-base ${loading ? 'opacity-50 cursor-not-allowed' : ''}`}
             >
               {loading ? 'جارٍ الحفظ...' : 'حفظ'}
             </motion.button>
@@ -229,7 +238,7 @@ const EditModal = ({ report, isOpen, onClose, onUpdate }) => {
               disabled={loading}
               whileHover={{ scale: loading ? 1 : 1.05 }}
               whileTap={{ scale: loading ? 1 : 0.95 }}
-              className={`bg-gray-500 text-white px-4 py-2 rounded-md hover:bg-gray-600 ${loading ? 'opacity-50 cursor-not-allowed' : ''}`}
+              className={`w-full sm:w-auto bg-gray-500 text-white px-4 py-2 rounded-md hover:bg-gray-600 transition-colors duration-300 text-sm sm:text-base ${loading ? 'opacity-50 cursor-not-allowed' : ''}`}
             >
               إلغاء
             </motion.button>
