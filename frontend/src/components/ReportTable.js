@@ -40,6 +40,7 @@ const ReportTable = ({ reports, onEdit }) => {
       acc.totalWorkHours += report.workHours || 0;
       acc.totalWorkDays += report.absence === 'لا' && report.weeklyLeaveDays === 0 && report.annualLeave === 'لا' && report.medicalLeave === 'لا' ? 1 : 0;
       acc.totalAbsenceDays += report.absence === 'نعم' ? 1 : 0;
+      acc.totalLateDays += (report.lateDeduction || 0) > 0 ? 1 : 0;
       acc.totalDeductions += (report.lateDeduction || 0) + (report.earlyLeaveDeduction || 0) + (report.medicalLeaveDeduction || 0);
       acc.totalOvertime += report.overtime || 0;
       acc.totalWeeklyLeaveDays += report.weeklyLeaveDays || 0;
@@ -51,6 +52,7 @@ const ReportTable = ({ reports, onEdit }) => {
       totalWorkHours: 0,
       totalWorkDays: 0,
       totalAbsenceDays: 0,
+      totalLateDays: 0,
       totalDeductions: 0,
       totalOvertime: 0,
       totalWeeklyLeaveDays: 0,
@@ -86,7 +88,7 @@ const ReportTable = ({ reports, onEdit }) => {
             </tr>
           </thead>
           <tbody>
-            {reports.map((report, index) => {
+            {reports.map((report) => {
               const reportDate = report.date ? DateTime.fromISO(report.date, { zone: 'Africa/Cairo' }) : null;
               const checkInTime = report.checkIn
                 ? DateTime.fromFormat(report.checkIn, 'hh:mm:ss a', { zone: 'Africa/Cairo' })
@@ -97,7 +99,7 @@ const ReportTable = ({ reports, onEdit }) => {
 
               return (
                 <motion.tr
-                  key={report._id || index}
+                  key={report._id}
                   whileHover={{ backgroundColor: '#f1fafb' }}
                   transition={{ duration: 0.2 }}
                   className={
@@ -108,7 +110,7 @@ const ReportTable = ({ reports, onEdit }) => {
                   }
                 >
                   <td className="px-4 py-2 text-right text-sm">{report.code}</td>
-                  <td className="px-4 py-2 text-right text-sm">{report.employeeName || 'غير معروف'}</td>
+                  <td className="px-4 py-2 text-right text-sm">{report.employeeName}</td>
                   <td className="px-4 py-2 text-right text-sm">
                     {reportDate && reportDate.isValid ? reportDate.toFormat('yyyy-MM-dd') : '-'}
                   </td>
@@ -159,6 +161,10 @@ const ReportTable = ({ reports, onEdit }) => {
           <div className="bg-red-100 p-4 rounded-lg text-right">
             <p className="text-sm font-medium text-gray-600">إجمالي أيام الغياب</p>
             <p className="text-lg font-bold text-red-700">{totals.totalAbsenceDays} يوم</p>
+          </div>
+          <div className="bg-orange-100 p-4 rounded-lg text-right">
+            <p className="text-sm font-medium text-gray-600">إجمالي أيام التأخير</p>
+            <p className="text-lg font-bold text-orange-700">{totals.totalLateDays} يوم</p>
           </div>
           <div className="bg-yellow-100 p-4 rounded-lg text-right">
             <p className="text-sm font-medium text-gray-600">إجمالي الخصومات</p>
