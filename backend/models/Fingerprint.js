@@ -61,6 +61,14 @@ const fingerprintSchema = new mongoose.Schema({
     type: Boolean,
     default: false,
   },
+  officialLeave: {
+    type: Boolean,
+    default: false,
+  },
+  leaveCompensation: {
+    type: Boolean,
+    default: false,
+  },
   isSingleFingerprint: {
     type: Boolean,
     default: false,
@@ -100,6 +108,15 @@ fingerprintSchema.pre('save', async function (next) {
     if (this.isModified('annualLeave')) {
       console.log(`Annual leave changed for ${this.code} on ${DateTime.fromJSDate(this.date).toISODate()}: ${this.annualLeave}`);
     }
+    if (this.isModified('medicalLeave')) {
+      console.log(`Medical leave changed for ${this.code} on ${DateTime.fromJSDate(this.date).toISODate()}: ${this.medicalLeave}`);
+    }
+    if (this.isModified('officialLeave')) {
+      console.log(`Official leave changed for ${this.code} on ${DateTime.fromJSDate(this.date).toISODate()}: ${this.officialLeave}`);
+    }
+    if (this.isModified('leaveCompensation')) {
+      console.log(`Leave compensation changed for ${this.code} on ${DateTime.fromJSDate(this.date).toISODate()}: ${this.leaveCompensation}`);
+    }
     if (this.isModified('earlyLeaveDeduction')) {
       console.log(`Early leave deduction changed for ${this.code} on ${DateTime.fromJSDate(this.date).toISODate()}: ${this.earlyLeaveDeduction}`);
     }
@@ -117,6 +134,42 @@ fingerprintSchema.methods.calculateAttendance = async function () {
     throw new Error(`تاريخ غير صالح لـ ${this.code}`);
   }
 
+  if ([this.absence, this.annualLeave, this.medicalLeave, this.officialLeave, this.leaveCompensation].filter(Boolean).length > 1) {
+    throw new Error(`لا يمكن تحديد أكثر من حالة واحدة (غياب، إجازة سنوية، إجازة طبية، إجازة رسمية، بدل إجازة) لـ ${this.code}`);
+  }
+
+  if (this.officialLeave) {
+    this.workHours = 0;
+    this.overtime = 0;
+    this.lateMinutes = 0;
+    this.lateDeduction = 0;
+    this.earlyLeaveDeduction = 0;
+    this.absence = false;
+    this.annualLeave = false;
+    this.medicalLeave = false;
+    this.leaveCompensation = false;
+    this.isSingleFingerprint = false;
+    this.medicalLeaveDeduction = 0;
+    console.log(`Official leave applied for ${this.code}: no deductions`);
+    return;
+  }
+
+  if (this.leaveCompensation) {
+    this.workHours = 0;
+    this.overtime = 0;
+    this.lateMinutes = 0;
+    this.lateDeduction = 0;
+    this.earlyLeaveDeduction = 0;
+    this.absence = false;
+    this.annualLeave = false;
+    this.medicalLeave = false;
+    this.officialLeave = false;
+    this.isSingleFingerprint = false;
+    this.medicalLeaveDeduction = 0;
+    console.log(`Leave compensation applied for ${this.code}: no deductions`);
+    return;
+  }
+
   if (this.medicalLeave) {
     this.workHours = 0;
     this.overtime = 0;
@@ -125,6 +178,8 @@ fingerprintSchema.methods.calculateAttendance = async function () {
     this.earlyLeaveDeduction = 0;
     this.absence = false;
     this.annualLeave = false;
+    this.officialLeave = false;
+    this.leaveCompensation = false;
     this.isSingleFingerprint = false;
     this.medicalLeaveDeduction = 0.25;
     console.log(`Medical leave applied for ${this.code}: medicalLeaveDeduction=0.25`);
@@ -138,6 +193,9 @@ fingerprintSchema.methods.calculateAttendance = async function () {
     this.lateDeduction = 0;
     this.earlyLeaveDeduction = 0;
     this.absence = false;
+    this.medicalLeave = false;
+    this.officialLeave = false;
+    this.leaveCompensation = false;
     this.isSingleFingerprint = false;
     this.medicalLeaveDeduction = 0;
     console.log(`Annual leave applied for ${this.code}: no deductions`);
@@ -151,6 +209,9 @@ fingerprintSchema.methods.calculateAttendance = async function () {
     this.lateDeduction = 0;
     this.earlyLeaveDeduction = 0;
     this.absence = false;
+    this.medicalLeave = false;
+    this.officialLeave = false;
+    this.leaveCompensation = false;
     this.isSingleFingerprint = false;
     this.medicalLeaveDeduction = 0;
     console.log(`Weekly leave day for ${this.code}: no deductions`);
@@ -165,6 +226,10 @@ fingerprintSchema.methods.calculateAttendance = async function () {
     this.earlyLeaveDeduction = this.absence ? 1 : 0;
     this.medicalLeaveDeduction = 0;
     this.isSingleFingerprint = false;
+    this.annualLeave = false;
+    this.medicalLeave = false;
+    this.officialLeave = false;
+    this.leaveCompensation = false;
     this.absence = true;
     console.log(`Absence recorded for ${this.code}: earlyLeaveDeduction=${this.earlyLeaveDeduction}`);
     return;
@@ -182,6 +247,10 @@ fingerprintSchema.methods.calculateAttendance = async function () {
       this.earlyLeaveDeduction = 0;
       this.medicalLeaveDeduction = 0;
       this.absence = false;
+      this.annualLeave = false;
+      this.medicalLeave = false;
+      this.officialLeave = false;
+      this.leaveCompensation = false;
       console.warn(`Invalid checkIn or checkOut time for ${this.code}`);
       return;
     }
@@ -192,12 +261,20 @@ fingerprintSchema.methods.calculateAttendance = async function () {
     this.overtime = hours > 8 ? hours - 8 : 0;
     this.medicalLeaveDeduction = 0;
     this.absence = false;
+    this.annualLeave = false;
+    this.medicalLeave = false;
+    this.officialLeave = false;
+    this.leaveCompensation = false;
     console.log(`Attendance calculated for ${this.code}: workHours=${this.workHours}, overtime=${this.overtime}`);
   } else {
     this.workHours = 0;
     this.overtime = 0;
     this.medicalLeaveDeduction = 0;
     this.absence = false;
+    this.annualLeave = false;
+    this.medicalLeave = false;
+    this.officialLeave = false;
+    this.leaveCompensation = false;
     console.log(`Single fingerprint recorded for ${this.code}: no work hours`);
   }
 };
