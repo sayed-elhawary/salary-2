@@ -35,6 +35,7 @@ const UploadFingerprint = () => {
   const [loading, setLoading] = useState(false);
   const [showSingleFingerprint, setShowSingleFingerprint] = useState(false);
   const [showAbsenceDays, setShowAbsenceDays] = useState(false);
+  const [errorMessage, setErrorMessage] = useState('');
 
   useEffect(() => {
     if (!user || user.role !== 'admin') {
@@ -63,16 +64,18 @@ const UploadFingerprint = () => {
   const calculateTotals = () => {
     const totals = filteredReports.reduce(
       (acc, report) => {
-        const isWeeklyLeave = isWeeklyLeaveDay(new Date(report.date), report.workDaysPerWeek || 5);
+        const isWeeklyLeave = isWeeklyLeaveDay(new Date(report.date), report.workDaysPerWeek || 6);
         const isWorkDay = !isWeeklyLeave &&
                          report.absence === 'لا' &&
                          report.annualLeave === 'لا' &&
                          report.medicalLeave === 'لا';
         const isAbsenceDay = report.absence === 'نعم';
+        const isLateDay = (report.lateDeduction || 0) > 0;
 
         acc.totalWorkHours += report.workHours || 0;
         acc.totalWorkDays += isWorkDay ? 1 : 0;
         acc.totalAbsenceDays += isAbsenceDay ? 1 : 0;
+        acc.totalLateDays += isLateDay ? 1 : 0;
         acc.totalDeductions += (report.lateDeduction || 0) +
                               (report.earlyLeaveDeduction || 0) +
                               (report.medicalLeaveDeduction || 0);
@@ -88,6 +91,7 @@ const UploadFingerprint = () => {
         totalWorkHours: 0,
         totalWorkDays: 0,
         totalAbsenceDays: 0,
+        totalLateDays: 0,
         totalDeductions: 0,
         totalOvertime: 0,
         totalWeeklyLeaveDays: 0,
@@ -97,12 +101,13 @@ const UploadFingerprint = () => {
       }
     );
 
-    console.log(`Calculated totals: Work Hours=${totals.totalWorkHours}, Work Days=${totals.totalWorkDays}, Absence Days=${totals.totalAbsenceDays}, Deductions=${totals.totalDeductions}, Overtime=${totals.totalOvertime}, Weekly Leave=${totals.totalWeeklyLeaveDays}, Annual Leave=${totals.totalAnnualLeaveDays}, Medical Leave=${totals.totalMedicalLeaveDays}`);
+    console.log(`Calculated totals: Work Hours=${totals.totalWorkHours}, Work Days=${totals.totalWorkDays}, Absence Days=${totals.totalAbsenceDays}, Late Days=${totals.totalLateDays}, Deductions=${totals.totalDeductions}, Overtime=${totals.totalOvertime}, Weekly Leave=${totals.totalWeeklyLeaveDays}, Annual Leave=${totals.totalAnnualLeaveDays}, Medical Leave=${totals.totalMedicalLeaveDays}`);
 
     return {
       totalWorkHours: totals.totalWorkHours.toFixed(2),
       totalWorkDays: totals.totalWorkDays,
       totalAbsenceDays: totals.totalAbsenceDays,
+      totalLateDays: totals.totalLateDays,
       totalDeductions: totals.totalDeductions.toFixed(2),
       totalOvertime: totals.totalOvertime.toFixed(2),
       totalWeeklyLeaveDays: totals.totalWeeklyLeaveDays,
@@ -116,12 +121,19 @@ const UploadFingerprint = () => {
 
   if (!user || user.role !== 'admin') return null;
 
-  const handleFileChange = (e) => setFile(e.target.files[0]);
+  const handleFileChange = (e) => {
+    setFile(e.target.files[0]);
+    setErrorMessage('');
+  };
 
   const handleUpload = async (e) => {
     e.preventDefault();
-    if (!file) return alert('يرجى اختيار ملف أولاً');
+    if (!file) {
+      setErrorMessage('يرجى اختيار ملف أولاً');
+      return;
+    }
     setLoading(true);
+    setErrorMessage('');
     const fd = new FormData();
     fd.append('file', file);
     try {
@@ -131,18 +143,25 @@ const UploadFingerprint = () => {
         { headers: { Authorization: `Bearer ${localStorage.getItem('token')}` } }
       );
       setReports(res.data.reports);
+      setFilteredReports(res.data.reports);
       setFile(null);
-      alert('تم رفع الملف وتحديث البيانات بنجاح');
+      setErrorMessage('');
     } catch (err) {
-      console.error('Error uploading file:', err.response?.data?.error || err.message);
-      alert(`خطأ أثناء رفع الملف: ${err.response?.data?.error || err.message}`);
+      const errorMsg = err.response?.data?.error || err.message;
+      console.error('Error uploading file:', errorMsg);
+      setErrorMessage(`خطأ أثناء رفع الملف: ${errorMsg}`);
     } finally {
       setLoading(false);
     }
   };
 
   const handleSearch = async () => {
+    if (!searchCode || !dateFrom || !dateTo) {
+      setErrorMessage('يرجى إدخال كود الموظف وتاريخ البداية والنهاية');
+      return;
+    }
     setLoading(true);
+    setErrorMessage('');
     try {
       const res = await axios.get(
         `${process.env.REACT_APP_API_URL}/api/fingerprints`,
@@ -151,67 +170,12 @@ const UploadFingerprint = () => {
           headers: { Authorization: `Bearer ${localStorage.getItem('token')}` },
         }
       );
-      let reports = res.data.reports;
-      const startDate = DateTime.fromISO(dateFrom, { zone: 'Africa/Cairo' });
-      const endDate = DateTime.fromISO(dateTo, { zone: 'Africa/Cairo' });
-
-      if (startDate.isValid && endDate.isValid && searchCode) {
-        const user = await axios.get(
-          `${process.env.REACT_APP_API_URL}/api/users/${searchCode}`,
-          { headers: { Authorization: `Bearer ${localStorage.getItem('token')}` } }
-        ).then(res => res.data.user).catch(() => null);
-
-        const workDaysPerWeek = user?.workDaysPerWeek || 5;
-        let currentDate = startDate;
-        const allReports = [];
-
-        while (currentDate <= endDate) {
-          const dateStr = currentDate.toISODate();
-          const existingReport = reports.find(
-            r => r.code === searchCode && DateTime.fromISO(r.date).toISODate() === dateStr
-          );
-
-          if (!existingReport) {
-            const isWeeklyLeave = isWeeklyLeaveDay(currentDate.toJSDate(), workDaysPerWeek);
-            const report = {
-              code: searchCode,
-              date: dateStr,
-              checkIn: null,
-              checkOut: null,
-              workHours: 0,
-              overtime: 0,
-              lateMinutes: 0,
-              lateDeduction: 0,
-              earlyLeaveDeduction: 0,
-              absence: isWeeklyLeave ? 'لا' : 'نعم',
-              annualLeave: 'لا',
-              medicalLeave: 'لا',
-              medicalLeaveDeduction: 0,
-              isSingleFingerprint: '',
-              workDaysPerWeek,
-              weeklyLeaveDays: isWeeklyLeave ? 1 : 0,
-              employeeName: user?.fullName || 'غير معروف',
-              monthlyLateAllowance: user?.monthlyLateAllowance || 120,
-              totalAnnualLeave: user?.totalAnnualLeave || 0,
-              annualLeaveBalance: user?.annualLeaveBalance || 21,
-            };
-            allReports.push(report);
-          } else {
-            allReports.push({
-              ...existingReport,
-              workHours: (existingReport.checkIn || existingReport.checkOut) ? 8 : 0, // البصمة الفردية تُحسب 8 ساعات
-              absence: (existingReport.checkIn || existingReport.checkOut) ? 'لا' : existingReport.absence,
-            });
-          }
-          currentDate = currentDate.plus({ days: 1 });
-        }
-        reports = allReports.sort((a, b) => new Date(a.date) - new Date(b.date));
-      }
-
-      setReports(reports);
+      setReports(res.data.reports);
+      setFilteredReports(res.data.reports);
     } catch (err) {
-      console.error('Error searching reports:', err.response?.data?.error || err.message);
-      alert(`خطأ أثناء البحث: ${err.response?.data?.error || err.message}`);
+      const errorMsg = err.response?.data?.error || err.message;
+      console.error('Error searching reports:', errorMsg);
+      setErrorMessage(`خطأ أثناء البحث: ${errorMsg}`);
     } finally {
       setLoading(false);
     }
@@ -219,6 +183,7 @@ const UploadFingerprint = () => {
 
   const handleShowAll = async () => {
     setLoading(true);
+    setErrorMessage('');
     try {
       const res = await axios.get(
         `${process.env.REACT_APP_API_URL}/api/fingerprints`,
@@ -227,12 +192,14 @@ const UploadFingerprint = () => {
         }
       );
       setReports(res.data.reports);
+      setFilteredReports(res.data.reports);
       setSearchCode('');
       setDateFrom('');
       setDateTo('');
     } catch (err) {
-      console.error('Error fetching all reports:', err.response?.data?.error || err.message);
-      alert(`خطأ أثناء جلب جميع السجلات: ${err.response?.data?.error || err.message}`);
+      const errorMsg = err.response?.data?.error || err.message;
+      console.error('Error fetching all reports:', errorMsg);
+      setErrorMessage(`خطأ أثناء جلب جميع السجلات: ${errorMsg}`);
     } finally {
       setLoading(false);
     }
@@ -243,6 +210,7 @@ const UploadFingerprint = () => {
       return;
     }
     setLoading(true);
+    setErrorMessage('');
     try {
       const res = await axios.delete(
         `${process.env.REACT_APP_API_URL}/api/fingerprints/all`,
@@ -250,10 +218,12 @@ const UploadFingerprint = () => {
       );
       setReports([]);
       setFilteredReports([]);
+      setErrorMessage('');
       alert(`تم حذف ${res.data.deletedCount} سجل بصمة بنجاح`);
     } catch (err) {
-      console.error('Error deleting all fingerprints:', err.response?.data?.error || err.message);
-      alert(`خطأ أثناء الحذف: ${err.response?.data?.error || err.message}`);
+      const errorMsg = err.response?.data?.error || err.message;
+      console.error('Error deleting all fingerprints:', errorMsg);
+      setErrorMessage(`خطأ أثناء الحذف: ${errorMsg}`);
     } finally {
       setLoading(false);
     }
@@ -263,13 +233,20 @@ const UploadFingerprint = () => {
     setReports((prev) =>
       prev.map((report) => (report._id === updatedReport._id ? updatedReport : report))
     );
+    setFilteredReports((prev) =>
+      prev.map((report) => (report._id === updatedReport._id ? updatedReport : report))
+    );
   };
 
   const handleCreateMission = async (e) => {
     e.preventDefault();
+    if (!missionDetails.code || !missionDetails.date) {
+      setErrorMessage('يرجى إدخال كود الموظف وتاريخ المأمورية');
+      return;
+    }
     setLoading(true);
+    setErrorMessage('');
     try {
-      const token = localStorage.getItem('token');
       const missionDate = DateTime.fromISO(missionDetails.date, { zone: 'Africa/Cairo' });
       if (!missionDate.isValid) {
         throw new Error('تاريخ المأمورية غير صالح');
@@ -283,23 +260,6 @@ const UploadFingerprint = () => {
         throw new Error('تنسيق الوقت غير صالح، يجب أن يكون HH:mm:ss');
       }
 
-      const checkIn = missionDetails.checkIn
-        ? DateTime.fromFormat(
-            `${missionDetails.date} ${missionDetails.checkIn}`,
-            'yyyy-MM-dd HH:mm:ss',
-            { zone: 'Africa/Cairo' }
-          ).toJSDate()
-        : null;
-      const checkOut = missionDetails.checkOut
-        ? DateTime.fromFormat(
-            `${missionDetails.date} ${missionDetails.checkOut}`,
-            'yyyy-MM-dd HH:mm:ss',
-            { zone: 'Africa/Cairo' }
-          ).toJSDate()
-        : null;
-
-      const workHours = checkIn && checkOut ? 8 : 0;
-
       const response = await axios.post(
         `${process.env.REACT_APP_API_URL}/api/fingerprints/mission`,
         {
@@ -310,25 +270,25 @@ const UploadFingerprint = () => {
           missionType: missionDetails.missionType,
           description: missionDetails.description,
         },
-        { headers: { Authorization: `Bearer ${token}` } }
+        { headers: { Authorization: `Bearer ${localStorage.getItem('token')}` } }
       );
 
       setReports((prev) => [
         ...prev.filter((r) => r._id !== response.data.report._id),
-        {
-          ...response.data.report,
-          workHours,
-          absence: 'لا',
-          annualLeave: 'لا',
-          medicalLeave: 'لا',
-        },
+        response.data.report,
+      ]);
+      setFilteredReports((prev) => [
+        ...prev.filter((r) => r._id !== response.data.report._id),
+        response.data.report,
       ]);
       setIsCreatingMission(false);
       setMissionDetails({ code: '', date: '', checkIn: '', checkOut: '', missionType: 'مهمة رسمية', description: '' });
+      setErrorMessage('');
       alert('تم إنشاء المأمورية بنجاح');
     } catch (err) {
-      console.error('Error creating mission:', err.response?.data?.error || err.message);
-      alert(`خطأ أثناء إنشاء المأمورية: ${err.response?.data?.error || err.message}`);
+      const errorMsg = err.response?.data?.error || err.message;
+      console.error('Error creating mission:', errorMsg);
+      setErrorMessage(`خطأ أثناء إنشاء المأمورية: ${errorMsg}`);
     } finally {
       setLoading(false);
     }
@@ -336,7 +296,12 @@ const UploadFingerprint = () => {
 
   const handleCreateMedicalLeave = async (e) => {
     e.preventDefault();
+    if (!medicalLeaveDetails.code || !medicalLeaveDetails.dateFrom || !medicalLeaveDetails.dateTo) {
+      setErrorMessage('يرجى إدخال كود الموظف وتاريخ البداية والنهاية');
+      return;
+    }
     setLoading(true);
+    setErrorMessage('');
     try {
       const startDate = DateTime.fromISO(medicalLeaveDetails.dateFrom, { zone: 'Africa/Cairo' });
       const endDate = DateTime.fromISO(medicalLeaveDetails.dateTo, { zone: 'Africa/Cairo' });
@@ -363,12 +328,18 @@ const UploadFingerprint = () => {
         ...prev.filter((r) => !response.data.reports.some((newR) => newR._id === r._id)),
         ...response.data.reports,
       ]);
+      setFilteredReports((prev) => [
+        ...prev.filter((r) => !response.data.reports.some((newR) => newR._id === r._id)),
+        ...response.data.reports,
+      ]);
       setIsCreatingMedicalLeave(false);
       setMedicalLeaveDetails({ code: '', dateFrom: '', dateTo: '' });
+      setErrorMessage('');
       alert('تم إنشاء الإجازة الطبية بنجاح');
     } catch (err) {
-      console.error('Error creating medical leave:', err.response?.data?.error || err.message);
-      alert(`خطأ أثناء إنشاء الإجازة الطبية: ${err.response?.data?.error || err.message}`);
+      const errorMsg = err.response?.data?.error || err.message;
+      console.error('Error creating medical leave:', errorMsg);
+      setErrorMessage(`خطأ أثناء إنشاء الإجازة الطبية: ${errorMsg}`);
     } finally {
       setLoading(false);
     }
@@ -388,6 +359,17 @@ const UploadFingerprint = () => {
     <div className="min-h-screen bg-gray-100">
       <NavBar />
       <div className="container mx-auto p-6">
+        {/* عرض رسالة الخطأ */}
+        {errorMessage && (
+          <motion.div
+            initial={{ opacity: 0, y: -20 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="bg-red-100 text-red-700 p-4 rounded-lg mb-6 text-right"
+          >
+            {errorMessage}
+          </motion.div>
+        )}
+
         {/* قسم رفع ملف البصمات */}
         <motion.div
           initial={{ opacity: 0, y: -20 }}
@@ -406,6 +388,7 @@ const UploadFingerprint = () => {
                 accept=".xlsx, .xls"
                 onChange={handleFileChange}
                 className="w-full px-3 py-2 border rounded-lg text-right"
+                disabled={loading}
               />
             </div>
             <motion.button
@@ -441,6 +424,7 @@ const UploadFingerprint = () => {
                 onChange={(e) => setSearchCode(e.target.value)}
                 className="w-full px-3 py-2 border rounded-lg text-right"
                 placeholder="أدخل كود الموظف"
+                disabled={loading}
               />
             </div>
             <div>
@@ -452,6 +436,7 @@ const UploadFingerprint = () => {
                 value={dateFrom}
                 onChange={(e) => setDateFrom(e.target.value)}
                 className="w-full px-3 py-2 border rounded-lg text-right"
+                disabled={loading}
               />
             </div>
             <div>
@@ -463,6 +448,7 @@ const UploadFingerprint = () => {
                 value={dateTo}
                 onChange={(e) => setDateTo(e.target.value)}
                 className="w-full px-3 py-2 border rounded-lg text-right"
+                disabled={loading}
               />
             </div>
           </div>
@@ -491,17 +477,23 @@ const UploadFingerprint = () => {
             </motion.button>
             <motion.button
               onClick={() => setIsCreatingMission(true)}
+              disabled={loading}
               whileHover={{ scale: 1.05 }}
               whileTap={{ scale: 0.95 }}
-              className="bg-green-600 text-white px-4 py-2 rounded-md hover:bg-green-700 transition-colors duration-300"
+              className={`bg-green-600 text-white px-4 py-2 rounded-md hover:bg-green-700 transition-colors duration-300 ${
+                loading ? 'opacity-50 cursor-not-allowed' : ''
+              }`}
             >
               إنشاء مأمورية
             </motion.button>
             <motion.button
               onClick={() => setIsCreatingMedicalLeave(true)}
+              disabled={loading}
               whileHover={{ scale: 1.05 }}
               whileTap={{ scale: 0.95 }}
-              className="bg-yellow-600 text-white px-4 py-2 rounded-md hover:bg-yellow-700 transition-colors duration-300"
+              className={`bg-yellow-600 text-white px-4 py-2 rounded-md hover:bg-yellow-700 transition-colors duration-300 ${
+                loading ? 'opacity-50 cursor-not-allowed' : ''
+              }`}
             >
               إضافة إجازة طبية
             </motion.button>
@@ -524,6 +516,7 @@ const UploadFingerprint = () => {
                 checked={showSingleFingerprint}
                 onChange={() => setShowSingleFingerprint(!showSingleFingerprint)}
                 className="mr-2"
+                disabled={loading}
               />
               عرض البصمات الفردية فقط
             </label>
@@ -533,6 +526,7 @@ const UploadFingerprint = () => {
                 checked={showAbsenceDays}
                 onChange={() => setShowAbsenceDays(!showAbsenceDays)}
                 className="mr-2"
+                disabled={loading}
               />
               عرض أيام الغياب فقط
             </label>
@@ -565,6 +559,7 @@ const UploadFingerprint = () => {
                       onChange={handleMissionChange}
                       className="w-full px-3 py-2 border rounded-lg text-right"
                       required
+                      disabled={loading}
                     />
                   </div>
                   <div>
@@ -578,6 +573,7 @@ const UploadFingerprint = () => {
                       onChange={handleMissionChange}
                       className="w-full px-3 py-2 border rounded-lg text-right"
                       required
+                      disabled={loading}
                     />
                   </div>
                   <div>
@@ -591,6 +587,7 @@ const UploadFingerprint = () => {
                       onChange={handleMissionChange}
                       className="w-full px-3 py-2 border rounded-lg text-right"
                       placeholder="HH:mm:ss"
+                      disabled={loading}
                     />
                   </div>
                   <div>
@@ -604,6 +601,7 @@ const UploadFingerprint = () => {
                       onChange={handleMissionChange}
                       className="w-full px-3 py-2 border rounded-lg text-right"
                       placeholder="HH:mm:ss"
+                      disabled={loading}
                     />
                   </div>
                   <div>
@@ -615,6 +613,7 @@ const UploadFingerprint = () => {
                       value={missionDetails.missionType}
                       onChange={handleMissionChange}
                       className="w-full px-3 py-2 border rounded-lg text-right"
+                      disabled={loading}
                     >
                       <option value="مهمة رسمية">مهمة رسمية</option>
                       <option value="تدريب">تدريب</option>
@@ -631,6 +630,7 @@ const UploadFingerprint = () => {
                       onChange={handleMissionChange}
                       className="w-full px-3 py-2 border rounded-lg text-right"
                       rows="4"
+                      disabled={loading}
                     />
                   </div>
                   <div className="flex justify-end gap-4">
@@ -648,9 +648,12 @@ const UploadFingerprint = () => {
                     <motion.button
                       type="button"
                       onClick={() => setIsCreatingMission(false)}
+                      disabled={loading}
                       whileHover={{ scale: 1.05 }}
                       whileTap={{ scale: 0.95 }}
-                      className="bg-gray-600 text-white px-4 py-2 rounded-md hover:bg-gray-700 transition-colors duration-300"
+                      className={`bg-gray-600 text-white px-4 py-2 rounded-md hover:bg-gray-700 transition-colors duration-300 ${
+                        loading ? 'opacity-50 cursor-not-allowed' : ''
+                      }`}
                     >
                       إلغاء
                     </motion.button>
@@ -687,6 +690,7 @@ const UploadFingerprint = () => {
                       onChange={handleMedicalLeaveChange}
                       className="w-full px-3 py-2 border rounded-lg text-right"
                       required
+                      disabled={loading}
                     />
                   </div>
                   <div>
@@ -700,6 +704,7 @@ const UploadFingerprint = () => {
                       onChange={handleMedicalLeaveChange}
                       className="w-full px-3 py-2 border rounded-lg text-right"
                       required
+                      disabled={loading}
                     />
                   </div>
                   <div>
@@ -713,6 +718,7 @@ const UploadFingerprint = () => {
                       onChange={handleMedicalLeaveChange}
                       className="w-full px-3 py-2 border rounded-lg text-right"
                       required
+                      disabled={loading}
                     />
                   </div>
                   <div className="flex justify-end gap-4">
@@ -730,9 +736,12 @@ const UploadFingerprint = () => {
                     <motion.button
                       type="button"
                       onClick={() => setIsCreatingMedicalLeave(false)}
+                      disabled={loading}
                       whileHover={{ scale: 1.05 }}
                       whileTap={{ scale: 0.95 }}
-                      className="bg-gray-600 text-white px-4 py-2 rounded-md hover:bg-gray-700 transition-colors duration-300"
+                      className={`bg-gray-600 text-white px-4 py-2 rounded-md hover:bg-gray-700 transition-colors duration-300 ${
+                        loading ? 'opacity-50 cursor-not-allowed' : ''
+                      }`}
                     >
                       إلغاء
                     </motion.button>
@@ -768,6 +777,10 @@ const UploadFingerprint = () => {
                   <p className="text-sm font-medium text-gray-600">إجمالي أيام الغياب</p>
                   <p className="text-lg font-bold text-red-700">{totals.totalAbsenceDays} يوم</p>
                 </div>
+                <div className="bg-orange-100 p-4 rounded-lg text-right">
+                  <p className="text-sm font-medium text-gray-600">إجمالي أيام التأخير</p>
+                  <p className="text-lg font-bold text-orange-700">{totals.totalLateDays} يوم</p>
+                </div>
                 <div className="bg-yellow-100 p-4 rounded-lg text-right">
                   <p className="text-sm font-medium text-gray-600">إجمالي الخصومات</p>
                   <p className="text-lg font-bold text-yellow-700">{totals.totalDeductions} يوم</p>
@@ -781,7 +794,7 @@ const UploadFingerprint = () => {
                   <p className="text-lg font-bold text-indigo-700">{totals.totalWeeklyLeaveDays} يوم</p>
                 </div>
                 <div className="bg-teal-100 p-4 rounded-lg text-right">
-                  <p className="text-sm font-medium text-gray-600">إجمالي أيام الإجازة السنوية (الفترة)</p>
+                  <p className="text-sm font-medium text-gray-600">إجمالي أيام الإجازة السنوية</p>
                   <p className="text-lg font-bold text-teal-700">{totals.totalAnnualLeaveDays} يوم</p>
                 </div>
                 <div className="bg-pink-100 p-4 rounded-lg text-right">
